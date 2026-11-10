@@ -1,0 +1,20 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+publish/
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Stufe-0-Tests
+tools/stufe0/ffmpeg.exe
+tools/stufe0/ffplay.exe
+tools/stufe0/ffprobe.exe
+tools/stufe0/*.mkv
+tools/stufe0/*.log
