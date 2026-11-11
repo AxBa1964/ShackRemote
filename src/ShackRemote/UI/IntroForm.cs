@@ -99,7 +99,7 @@ public sealed class IntroForm : Form
             BackColor = Theme.Surface,   // gleiche Farbe wie das Fenster – kein abgesetzter Streifen
         };
         text.Controls.Add(Centered("ShackRemote", new Font("Segoe UI Semibold", 22F)));
-        text.Controls.Add(Centered("Fernsteuerung für die Funkstation – Bild, Ton, Maus, Tastatur und Dateien", color: Theme.SubtleText, bottom: 8));
+        text.Controls.Add(Centered("Fernsteuerung für den Shack-PC – Bild, Ton, Maus, Tastatur und Dateien", color: Theme.SubtleText, bottom: 8));
         text.Controls.Add(Centered($"Version {Protocol.Version}   ·   © {DateTime.Now.Year} Axel Baruschke · DK7EE", new Font("Segoe UI Semibold", 10.5F)));
         text.Controls.Add(Centered("Software zur freien Verwendung – kostenlos nutzen und weitergeben.", bottom: 6));
         text.Controls.Add(Centered("Lizenz und Haftung", new Font("Segoe UI Semibold", 10F), Theme.SubtleText, bottom: 0));
