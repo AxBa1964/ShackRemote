@@ -181,13 +181,12 @@ public sealed class FilePane : UserControl
         var sw = Stopwatch.StartNew();
         try
         {
-            _driveCache = await Side.DrivesAsync();
-            _drives.Items.Clear();
-            foreach (var d in _driveCache) _drives.Items.Add(d);
-            _drives.DisplayMember = nameof(FsEntry.Name);
-            var slow = _driveCache.Where(d => d.Slow).Select(d => $"{d.Name.TrimEnd('\\')} ({d.Info})").ToList();
+            _driveWatch = sw;
+            _driveCache = await Side.DrivesAsync(OnDriveUpdate);
+            FillDriveBox();
+            var pending = _driveCache.Where(d => d.Pending).Select(d => d.Name.TrimEnd('\\')).ToList();
             Log?.Invoke($"{Title}: {_driveCache.Count} Laufwerke in {sw.Elapsed.TotalSeconds:F1} s" +
-                        (slow.Count > 0 ? " – langsam: " + string.Join(", ", slow) : ""));
+                        (pending.Count > 0 && Side is RemoteSide ? " – langsam: " + string.Join(", ", pending) : ""));
         }
         catch (Exception ex)
         {
@@ -195,6 +194,49 @@ public sealed class FilePane : UserControl
         }
         if (!string.IsNullOrEmpty(startPath) && await TryLoadAsync(startPath)) return;
         await LoadAsync("");
+    }
+
+    private Stopwatch _driveWatch = Stopwatch.StartNew();
+
+    private void FillDriveBox()
+    {
+        var selected = (_drives.SelectedItem as FsEntry)?.Name;
+        _drives.Items.Clear();
+        foreach (var d in _driveCache) _drives.Items.Add(d);
+        _drives.DisplayMember = nameof(FsEntry.Name);
+        SelectDriveFor(CurrentPath.Length > 0 ? CurrentPath : selected ?? "");
+    }
+
+    /// <summary>Nachgereichte Laufwerksdetails (aus einem Hintergrund-Thread).</summary>
+    private void OnDriveUpdate(FsEntry old, FsEntry? updated)
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { BeginInvoke(() => OnDriveUpdate(old, updated)); return; }
+
+        int index = _driveCache.FindIndex(d => d.Name == old.Name);
+        if (index < 0) return;
+        if (updated is null) _driveCache.RemoveAt(index);
+        else _driveCache[index] = updated;
+        FillDriveBox();
+
+        if (_driveWatch.Elapsed > TimeSpan.FromSeconds(1))
+            Log?.Invoke($"{Title}: {old.Name.TrimEnd('\\')} " +
+                        (updated is null ? "nicht bereit" : $"nach {_driveWatch.Elapsed.TotalSeconds:F1} s: {updated.Info}"));
+
+        // Steht die Laufwerksübersicht gerade offen: Zeile anpassen
+        if (CurrentPath.Length != 0) return;
+        foreach (ListViewItem item in _list.Items)
+        {
+            if (item.Tag is not FsEntry e || e.Name != old.Name) continue;
+            if (updated is null) { _list.Items.Remove(item); }
+            else
+            {
+                item.Tag = updated;
+                item.SubItems[2].Text = updated.Info ?? "";
+            }
+            break;
+        }
+        UpdateInfo();
     }
 
     /// <summary>Aktuellen Ordner neu einlesen; darf aus jedem Thread aufgerufen werden.</summary>
@@ -243,7 +285,12 @@ public sealed class FilePane : UserControl
             List<FsEntry> entries;
             if (path.Length == 0)
             {
-                if (reloadDrives || _driveCache.Count == 0) _driveCache = await Side.DrivesAsync();
+                if (reloadDrives || _driveCache.Count == 0)
+                {
+                    _driveWatch = Stopwatch.StartNew();
+                    _driveCache = await Side.DrivesAsync(OnDriveUpdate);
+                    FillDriveBox();
+                }
                 entries = _driveCache;
             }
             else

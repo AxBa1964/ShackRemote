@@ -405,7 +405,8 @@ public sealed class FileForm : Form
 
 public interface IFileSide
 {
-    Task<List<FsEntry>> DrivesAsync();
+    /// <summary>Laufwerke; update(alt, neu) meldet nachgereichte Details (neu = null: nicht bereit, ausblenden).</summary>
+    Task<List<FsEntry>> DrivesAsync(Action<FsEntry, FsEntry?>? update = null);
     Task<List<FsEntry>> ListAsync(string path);
     Task MkdirAsync(string path);
     Task DeleteAsync(string path);
@@ -415,7 +416,15 @@ public interface IFileSide
 
 public sealed class LocalSide : IFileSide
 {
-    public Task<List<FsEntry>> DrivesAsync() => Task.Run(() => FsOps.Drives());
+    /// <summary>Sofort alle Buchstaben, Details je Laufwerk werden nachgereicht, sobald es antwortet.</summary>
+    public Task<List<FsEntry>> DrivesAsync(Action<FsEntry, FsEntry?>? update = null)
+    {
+        if (update is null) return Task.Run(() => FsOps.Drives());
+        var quick = FsOps.DrivesQuick();
+        foreach (var q in quick)
+            _ = Task.Run(() => FsOps.DescribeDrive(q.Name)).ContinueWith(t => update(q, t.IsCompletedSuccessfully ? t.Result : null));
+        return Task.FromResult(quick);
+    }
     public Task<List<FsEntry>> ListAsync(string path) => Task.Run(() => FsOps.List(path));
     public Task MkdirAsync(string path) => Task.Run(() => Directory.CreateDirectory(path));
     public Task DeleteAsync(string path) => Task.Run(() => FsOps.Delete(path));
@@ -427,7 +436,7 @@ public sealed class RemoteSide : IFileSide
 {
     public RemoteFs Fs { get; }
     public RemoteSide(RemoteFs fs) => Fs = fs;
-    public Task<List<FsEntry>> DrivesAsync() => Fs.DrivesAsync();
+    public Task<List<FsEntry>> DrivesAsync(Action<FsEntry, FsEntry?>? update = null) => Fs.DrivesAsync();
     public Task<List<FsEntry>> ListAsync(string path) => Fs.ListAsync(path);
     public Task MkdirAsync(string path) => Fs.MkdirAsync(path);
     public Task DeleteAsync(string path) => Fs.DeleteAsync(path);

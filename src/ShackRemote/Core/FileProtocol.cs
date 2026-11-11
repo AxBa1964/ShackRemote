@@ -61,43 +61,55 @@ public sealed class FsEntry
     public DateTime Modified { get; set; }
     /// <summary>Nur bei Laufwerken: Bezeichnung und Art, z. B. "Daten (Festplatte)".</summary>
     public string? Info { get; set; }
-    /// <summary>Nur bei Laufwerken: Abfrage dauerte zu lange.</summary>
-    public bool Slow { get; set; }
+    /// <summary>Nur bei Laufwerken: Details stehen noch aus.</summary>
+    public bool Pending { get; set; }
 }
 
 /// <summary>Gemeinsame Dateioperationen (Server für den Shack-PC, Client für die linke Seite).</summary>
 public static class FsOps
 {
     /// <summary>
-    /// Laufwerke parallel abfragen, alle zusammen höchstens 1,5 s: getrennte Netzlaufwerke oder leere
-    /// Kartenleser können bei der Abfrage sonst viele Sekunden hängen. Zu langsame Laufwerke erscheinen trotzdem
-    /// (ohne Größenangabe), damit man sie öffnen kann.
+    /// Laufwerke parallel abfragen, alle zusammen höchstens 1,5 s (für den Server, der in einer Antwort liefert):
+    /// getrennte Netzlaufwerke oder leere Kartenleser können sonst viele Sekunden hängen.
+    /// Zu langsame Laufwerke erscheinen trotzdem (Pending), damit man sie öffnen kann.
     /// </summary>
     public static List<FsEntry> Drives()
     {
-        var drives = DriveInfo.GetDrives();
-        var tasks = drives.Select(d => Task.Run(() => Describe(d))).ToArray();
+        var quick = DrivesQuick();
+        var tasks = quick.Select(q => Task.Run(() => DescribeDrive(q.Name))).ToArray();
         var deadline = Environment.TickCount64 + 1500;
         var result = new List<FsEntry>();
-        for (int i = 0; i < drives.Length; i++)
+        for (int i = 0; i < quick.Count; i++)
         {
             int remaining = (int)Math.Max(0, deadline - Environment.TickCount64);
-            if (tasks[i].Wait(remaining))
+            if (!tasks[i].Wait(remaining))
             {
-                if (tasks[i].Result is { } e) result.Add(e);
+                quick[i].Info = quick[i].Info?.Replace("wird geprüft …", "antwortet langsam");
+                result.Add(quick[i]);
             }
-            else
-            {
-                result.Add(new FsEntry
-                {
-                    Name = drives[i].Name,
-                    Dir = true,
-                    Info = $"{DriveKind(drives[i].DriveType)} – antwortet langsam",
-                    Slow = true,
-                });
-            }
+            else if (tasks[i].Result is { } e) result.Add(e);
         }
         return result;
+    }
+
+    /// <summary>Sofort: nur Buchstabe und Art (keine Abfrage, die hängen könnte).</summary>
+    public static List<FsEntry> DrivesQuick() =>
+        DriveInfo.GetDrives().Select(d => new FsEntry
+        {
+            Name = d.Name,
+            Dir = true,
+            Info = $"{DriveKind(d.DriveType)} – wird geprüft …",
+            Pending = true,
+        }).ToList();
+
+    /// <summary>Details eines Laufwerks (kann bei Netzlaufwerken lange dauern). null = nicht bereit (z. B. leerer Kartenleser).</summary>
+    public static FsEntry? DescribeDrive(string name)
+    {
+        var d = new DriveInfo(name);
+        var e = Describe(d);
+        if (e is null && d.DriveType == DriveType.Network)
+            return new FsEntry { Name = d.Name, Dir = true, Info = "Netzlaufwerk – nicht verbunden" };
+        return e;
     }
 
     private static FsEntry? Describe(DriveInfo d)
