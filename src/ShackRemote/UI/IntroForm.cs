@@ -29,9 +29,8 @@ public sealed class IntroForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(980, 600);
 
-        // --- Bild ----------------------------------------------------------------------------
+        // --- Bild oben (volle Breite) ----------------------------------------------------------
         Control art;
         var image = LoadIntroImage();
         if (image is not null)
@@ -39,80 +38,78 @@ public sealed class IntroForm : Form
         else
             art = new IntroArt { Dock = DockStyle.Fill, Margin = new Padding(0) };
 
-        // --- Text ----------------------------------------------------------------------------
-        var title = new Label { Text = "ShackRemote", AutoSize = true, Font = new Font("Segoe UI Semibold", 28F), Margin = new Padding(0, 0, 0, 0) };
-        var tagline = new Label
+        // Größe: Breite 860, Bildhöhe nach Seitenverhältnis – aber so, dass das Fenster auf den Bildschirm passt
+        const int textHeight = 390;
+        int width = 860;
+        int imageHeight = image is not null && image.Width > 0 ? width * image.Height / image.Width : 260;
+        float scale = DeviceDpi / 96f;
+        int available = (int)(Screen.FromPoint(Cursor.Position).WorkingArea.Height / scale * 0.92f) - textHeight - 40;
+        if (imageHeight > available && available > 150)
         {
-            Text = "Fernsteuerung für die Funkstation – Bild, Ton, Maus, Tastatur und Dateien",
-            AutoSize = true,
-            MaximumSize = new Size(440, 0),
-            ForeColor = Theme.SubtleText,
-            Margin = new Padding(2, 0, 0, 14),
-        };
-        var version = new Label { Text = $"Version {Protocol.Version}", AutoSize = true, Margin = new Padding(2, 0, 0, 2) };
-        var author = new Label
+            if (image is not null) width = Math.Max(640, available * image.Width / image.Height);
+            imageHeight = available;
+        }
+        ClientSize = new Size(width, imageHeight + textHeight);
+
+        // --- Text darunter, zentriert --------------------------------------------------------
+        Label Centered(string text, Font? font = null, Color? color = null, int bottom = 2) => new()
         {
-            Text = $"© {DateTime.Now.Year} Axel Baruschke · DK7EE",
+            Text = text,
             AutoSize = true,
-            Font = new Font("Segoe UI Semibold", 11F),
-            Margin = new Padding(2, 0, 0, 2),
+            Anchor = AnchorStyles.Top,
+            TextAlign = ContentAlignment.MiddleCenter,
+            MaximumSize = new Size(width - 60, 0),
+            Font = font,
+            ForeColor = color ?? Theme.Text,
+            Margin = new Padding(0, 0, 0, bottom),
         };
-        var free = new Label
-        {
-            Text = "Software zur freien Verwendung – kostenlos nutzen und weitergeben.",
-            AutoSize = true,
-            MaximumSize = new Size(440, 0),
-            Margin = new Padding(2, 0, 0, 12),
-        };
+
         var license = new TextBox
         {
             Text = LicenseText,
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            Dock = DockStyle.Fill,
+            Anchor = AnchorStyles.Top,
+            Width = width - 120,
+            Height = 112,
             Font = new Font("Segoe UI", 9F),
             TabStop = false,
+            Margin = new Padding(0, 4, 0, 10),
         };
 
         var ok = Theme.Primary(LayoutKit.MakeButton("OK"));
-        ok.MinimumSize = new Size(120, 0);
+        ok.MinimumSize = new Size(140, 0);
         ok.DialogResult = DialogResult.OK;
         AcceptButton = ok;
         CancelButton = ok;
 
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Margin = new Padding(0, 10, 0, 0) };
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bottom.Controls.Add(LayoutKit.ThemePicker(this), 0, 0);
-        bottom.Controls.Add(ok, 1, 0);
+        var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Top, Margin = new Padding(0) };
+        buttons.Controls.Add(LayoutKit.ThemePicker(this));
+        buttons.Controls.Add(new Label { Width = 24 });   // Abstand
+        buttons.Controls.Add(ok);
 
-        var text = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(28, 26, 28, 18), BackColor = Theme.Window };
-        for (int i = 0; i < 6; i++) text.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        text.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        text.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        text.Controls.Add(title, 0, 0);
-        text.Controls.Add(tagline, 0, 1);
-        text.Controls.Add(version, 0, 2);
-        text.Controls.Add(author, 0, 3);
-        text.Controls.Add(free, 0, 4);
-        text.Controls.Add(new Label { Text = "Lizenz und Haftung", AutoSize = true, Font = new Font("Segoe UI Semibold", 10F), Margin = new Padding(2, 0, 0, 4) }, 0, 5);
-        text.Controls.Add(license, 0, 6);
-        text.Controls.Add(bottom, 0, 7);
+        var text = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            AutoSize = true,
+            Padding = new Padding(24, 14, 24, 14),
+            BackColor = Theme.Window,
+        };
+        text.Controls.Add(Centered("ShackRemote", new Font("Segoe UI Semibold", 22F)));
+        text.Controls.Add(Centered("Fernsteuerung für die Funkstation – Bild, Ton, Maus, Tastatur und Dateien", color: Theme.SubtleText, bottom: 8));
+        text.Controls.Add(Centered($"Version {Protocol.Version}   ·   © {DateTime.Now.Year} Axel Baruschke · DK7EE", new Font("Segoe UI Semibold", 10.5F)));
+        text.Controls.Add(Centered("Software zur freien Verwendung – kostenlos nutzen und weitergeben.", bottom: 6));
+        text.Controls.Add(license);
+        text.Controls.Add(buttons);
 
-        // Bildspalte nach Seitenverhältnis des Bildes (Querformat breiter), Textspalte fest daneben
-        int artWidth = 440;
-        if (image is not null && image.Height > 0)
-            artWidth = (int)Math.Clamp(600.0 * image.Width / image.Height, 360, 700);
-        ClientSize = new Size(artWidth + 520, 600);
-        var split = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
-        // Prozentangaben statt fester Pixel: skaliert sicher mit der Windows-Anzeigeskalierung
-        float artShare = 100f * artWidth / (artWidth + 520);
-        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, artShare));
-        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f - artShare));
-        split.Controls.Add(art, 0, 0);
-        split.Controls.Add(text, 1, 0);
-        Controls.Add(split);
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.Controls.Add(art, 0, 0);
+        root.Controls.Add(text, 0, 1);
+        Controls.Add(root);
         ResumeLayout(true);
 
         Shown += (_, _) => ok.Focus();
