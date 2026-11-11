@@ -59,7 +59,7 @@ Ergebnisse vom 11.11.2026 (Shack-PC Intel N100, FFmpeg 9.0.2 gyan.dev full, Moni
 **Lehren für ShackRemote**
 
 - `udp://@:5000` bindet unter Windows nur an `[::]` (IPv6) – IPv4 muss ausdrücklich gebunden werden (`0.0.0.0` bzw. die konkrete Adresse).
-- Auf beiden Rechnern läuft die Bitdefender-Firewall; für ShackRemote werden Ausnahmen nötig.
+- Auf beiden Rechnern läuft die Bitdefender-Firewall; der UDP-Stream (Port 5000) kam auch bei eingeschalteter Firewall auf beiden Seiten an. Für die ShackRemote-Exe (neue Ports, TCP) beim ersten Start erneut prüfen.
 - Ende-zu-Ende-Latenz wird in Stufe 1b per Zeitstempel im Programm gemessen.
 
 **Bewertung:** Machbarkeit bestätigt – weiter mit Stufe 1a.
