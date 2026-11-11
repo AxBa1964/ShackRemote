@@ -194,6 +194,10 @@ public sealed class ClientForm : Form
                 });
             });
 
+            foreach (ListViewItem item in _servers.Items)
+                if (item.Tag is FoundServer fs && string.Equals(fs.Info.Fingerprint, session.ServerFingerprint, StringComparison.OrdinalIgnoreCase))
+                    item.SubItems[3].Text = "gekoppelt – verbunden";
+
             _status.Text = $"Verbunden mit {session.ServerName} ({address})";
             Log($"Verbunden mit {session.ServerName}, Zertifikat {Identity.Short(session.ServerFingerprint)}");
             _disconnect.Enabled = true;
