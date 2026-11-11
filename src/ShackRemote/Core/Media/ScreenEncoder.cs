@@ -7,9 +7,10 @@ namespace ShackRemote.Core.Media;
 /// Server: Aufnahme und Kodierung im eigenen Prozess, alles auf der GPU (wie Sunshine/Parsec):
 /// ddagrab (Desktop Duplication, D3D11-Textur) -> hwmap nach QSV -> h264_qsv.
 ///
-/// Zwei Threads wie bei ffmpeg.exe: Der Aufnahme-Thread holt Bilder, der Encoder-Thread kodiert und sendet.
-/// Dazwischen liegt genau ein Platz: Ist der Encoder noch beschäftigt, ersetzt das neue Bild das ältere
-/// (geringste Verzögerung, kein Stau). Schlüsselbilder auf Anforderung statt Encoder-Neustart.
+/// Drei Threads wie bei ffmpeg.exe: Aufnahme -> Kodieren -> Senden.
+/// Zwischen Aufnahme und Encoder liegt genau ein Platz: Ist der Encoder noch beschäftigt, ersetzt das neue Bild
+/// das ältere (geringste Verzögerung, kein Stau). Fertige Pakete gehen über eine Warteschlange an den Sende-Thread,
+/// damit das Warten aufs Netz den Encoder nicht bremst. Schlüsselbilder auf Anforderung statt Encoder-Neustart.
 /// </summary>
 public sealed unsafe class ScreenEncoder : IDisposable
 {
@@ -17,6 +18,8 @@ public sealed unsafe class ScreenEncoder : IDisposable
     private readonly int _fps;
     private readonly Thread _captureThread;
     private Thread? _encodeThread;
+    private Thread? _sendThread;
+    private readonly System.Collections.Concurrent.BlockingCollection<(byte[] Data, bool Key)> _sendQueue = new();
     private volatile bool _stop;
     private int _keyframeRequested = 1;   // erstes Bild immer IDR
 
@@ -29,6 +32,8 @@ public sealed unsafe class ScreenEncoder : IDisposable
     private int _captured, _encoded, _replaced;
     private long _bytes;
     private int _keys;
+    private long _encodeTicks, _sendTicks;
+    private int _sent;
 
     // FFmpeg-Objekte (Aufbau im Aufnahme-Thread)
     private AVBufferRef* _device;
@@ -67,6 +72,8 @@ public sealed unsafe class ScreenEncoder : IDisposable
             Open();
             _encodeThread = new Thread(EncodeLoop) { IsBackground = true, Name = $"Encoder Ausgang {_output}", Priority = ThreadPriority.AboveNormal };
             _encodeThread.Start();
+            _sendThread = new Thread(SendLoop) { IsBackground = true, Name = $"Senden Ausgang {_output}" };
+            _sendThread.Start();
 
             var report = Stopwatch.StartNew();
             while (!_stop)
@@ -103,9 +110,13 @@ public sealed unsafe class ScreenEncoder : IDisposable
                     int keys = Interlocked.Exchange(ref _keys, 0);
                     int replaced;
                     lock (_slotGate) { replaced = _replaced; _replaced = 0; }
+                    double encMs = encoded > 0 ? Stopwatch.GetElapsedTime(0, Interlocked.Exchange(ref _encodeTicks, 0)).TotalMilliseconds / encoded : 0;
+                    int sent = Interlocked.Exchange(ref _sent, 0);
+                    double sendMs = sent > 0 ? Stopwatch.GetElapsedTime(0, Interlocked.Exchange(ref _sendTicks, 0)).TotalMilliseconds / sent : 0;
                     Log?.Invoke($"Video: aufgenommen {captured / s:F0} fps, kodiert {encoded / s:F0} fps, " +
                                 $"{bytes * 8 / 1000 / s:F0} kbit/s, {keys} Schlüsselbilder" +
-                                (replaced > 0 ? $", {replaced} Bilder übersprungen" : ""));
+                                (replaced > 0 ? $", {replaced} Bilder übersprungen" : "") +
+                                $" | je Bild: Kodieren {encMs:F1} ms, Senden {sendMs:F1} ms, Warteschlange {_sendQueue.Count}");
                     report.Restart();
                 }
             }
@@ -119,6 +130,8 @@ public sealed unsafe class ScreenEncoder : IDisposable
             _stop = true;
             _slotFilled.Set();
             if (_encodeThread is { IsAlive: true }) _encodeThread.Join(TimeSpan.FromSeconds(3));
+            _sendQueue.CompleteAdding();
+            if (_sendThread is { IsAlive: true }) _sendThread.Join(TimeSpan.FromSeconds(3));
             lock (_slotGate)
             {
                 if (_slot != null) { var f = _slot; ffmpeg.av_frame_free(&f); _slot = null; }
@@ -209,7 +222,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
         bsf->time_base_in = enc->time_base;
         FfmpegLib.Check(ffmpeg.av_bsf_init(bsf), "dump_extra init");
 
-        Log?.Invoke($"Video: Ausgang {_output}, {width} × {height}, {_fps} fps, h264_qsv (Aufnahme und Encoder getrennt)");
+        Log?.Invoke($"Video: Ausgang {_output}, {width} × {height}, {_fps} fps, h264_qsv (Aufnahme, Encoder, Senden getrennt)");
         Started?.Invoke(width, height);
     }
 
@@ -241,6 +254,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
                     frame->pict_type = AVPictureType.AV_PICTURE_TYPE_NONE;
                 }
 
+                long t0 = Stopwatch.GetTimestamp();
                 int ret = ffmpeg.avcodec_send_frame(_enc, frame);
                 ffmpeg.av_frame_free(&frame);
                 FfmpegLib.Check(ret, "Kodieren");
@@ -258,9 +272,10 @@ public sealed unsafe class ScreenEncoder : IDisposable
                         Interlocked.Add(ref _bytes, data.Length);
                         Interlocked.Increment(ref _encoded);
                         if (key) Interlocked.Increment(ref _keys);
-                        PacketReady?.Invoke(data, key);
+                        _sendQueue.Add((data, key));
                     }
                 }
+                Interlocked.Add(ref _encodeTicks, Stopwatch.GetTimestamp() - t0);
             }
         }
         catch (Exception ex)
@@ -271,6 +286,26 @@ public sealed unsafe class ScreenEncoder : IDisposable
         finally
         {
             ffmpeg.av_packet_free(&packet);
+        }
+    }
+
+    // ---- Sende-Thread ---------------------------------------------------------------------------
+
+    private void SendLoop()
+    {
+        try
+        {
+            foreach (var (data, key) in _sendQueue.GetConsumingEnumerable())
+            {
+                long t0 = Stopwatch.GetTimestamp();
+                PacketReady?.Invoke(data, key);
+                Interlocked.Add(ref _sendTicks, Stopwatch.GetTimestamp() - t0);
+                Interlocked.Increment(ref _sent);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_stop) Failed?.Invoke(ex.Message);
         }
     }
 
