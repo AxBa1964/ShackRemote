@@ -14,6 +14,7 @@ public sealed class RemoteForm : Form
     private readonly VideoPanel _video;
     private readonly Label _info;
     private readonly List<(MonitorInfo Monitor, Button Button)> _monitors = new();
+    private readonly Dictionary<MonitorInfo, string> _labels = new();
     private readonly System.Windows.Forms.Timer _resizeTimer = new() { Interval = 100 };
     private readonly System.Windows.Forms.Timer _statsTimer = new() { Interval = 1000 };
 
@@ -46,14 +47,23 @@ public sealed class RemoteForm : Form
             Padding = new Padding(6, 4, 6, 2),
             WrapContents = false,
         };
+        // Beschriftung nach Lage (Windows-Nummern weichen von den Anzeigeeinstellungen ab)
+        string[] names = list.Count switch
+        {
+            1 => new[] { "Monitor" },
+            2 => new[] { "Links", "Rechts" },
+            3 => new[] { "Links", "Mitte", "Rechts" },
+            _ => list.Select((_, i) => $"Monitor {i + 1}").ToArray(),
+        };
         var tips = new ToolTip();
         for (int pos = 0; pos < list.Count; pos++)
         {
             var monitor = list[pos];
-            var b = LayoutKit.MakeButton($"Monitor {monitor.Display}" + (monitor.Primary ? " ★" : ""));
-            b.MinimumSize = new Size(110, 0);
+            _labels[monitor] = names[pos];
+            var b = LayoutKit.MakeButton(names[pos] + (monitor.Primary ? " ★" : ""));
+            b.MinimumSize = new Size(100, 0);
             b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
-            tips.SetToolTip(b, $"Strg+{pos + 1} · {monitor.Width} × {monitor.Height} · {monitor.DeviceName}");
+            tips.SetToolTip(b, $"Strg+{pos + 1} · {monitor.Width} × {monitor.Height}" + (monitor.Primary ? " · Hauptbildschirm" : ""));
             _monitors.Add((monitor, b));
             toolbar.Controls.Add(b);
         }
@@ -141,7 +151,7 @@ public sealed class RemoteForm : Form
         _current = monitor;
         foreach (var (m, b) in _monitors)
             b.Font = new Font(Font, ReferenceEquals(m, monitor) ? FontStyle.Bold : FontStyle.Regular);
-        Log?.Invoke($"Monitor {monitor.Display} angefordert (DXGI-Ausgang {monitor.Index})");
+        Log?.Invoke($"Monitor {Label(monitor)} angefordert (DXGI-Ausgang {monitor.Index})");
         _renderer?.Reset();
         try
         {
@@ -162,7 +172,7 @@ public sealed class RemoteForm : Form
     }
 
     private void OnVideoInfo(int width, int height) => Ui(() =>
-        Log?.Invoke($"Shack-Monitor {_current?.Display}: {width} × {height}"));
+        Log?.Invoke($"Shack-Monitor {Label(_current)}: {width} × {height}"));
 
     private void OnVideoError(string message) => Ui(() =>
     {
@@ -180,10 +190,12 @@ public sealed class RemoteForm : Form
         int shown = r is null ? 0 : Interlocked.Exchange(ref r.FramesShown, 0);
         int resync = r is null ? 0 : Interlocked.Exchange(ref r.Resyncs, 0);
         var src = r is null || r.SourceWidth == 0 ? "–" : $"{r.SourceWidth} × {r.SourceHeight}";
-        _info.Text = $"Monitor {_current?.Display} ({src})   {decoded} fps dekodiert / {shown} angezeigt   " +
+        _info.Text = $"{Label(_current)} ({src})   {decoded} fps dekodiert / {shown} angezeigt   " +
                      $"{bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
                      (resync > 0 ? $"   Neusync {resync}×" : "") + "   Strg+1/2/3: Monitor";
     }
+
+    private string Label(MonitorInfo? m) => m is not null && _labels.TryGetValue(m, out var l) ? l : "–";
 
     private void Ui(Action action)
     {

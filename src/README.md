@@ -12,8 +12,11 @@ Seit 0.3.0 läuft das Bild wie bei Moonlight/Sunshine, RustDesk und Parsec kompl
 
 - **Schlüsselbild auf Anforderung** (`RequestKeyframe`): Beim Einstieg, nach Rückstand oder Fehler fordert der Client ein IDR an –
   kein Encoder-Neustart mehr. Beim Größe-Ändern des Fensters wird nur die Swapchain angepasst, nichts neu gestartet.
-- **Monitorknöpfe** in derselben Reihenfolge wie beim Server (nach Lage auf dem Desktop, links → rechts),
-  beschriftet mit der Windows-Anzeigenummer (`\\.\DISPLAYn`); ★ = Hauptbildschirm. **Strg+1/2/3** = Knopf 1/2/3 von links.
+- **Monitorknöpfe** in derselben Reihenfolge wie beim Server (nach Lage auf dem Desktop) und danach beschriftet:
+  **Links / Mitte / Rechts**, ★ = Hauptbildschirm. **Strg+1/2/3** = Knopf 1/2/3 von links.
+  (Die Windows-internen Nummern `\\.\DISPLAYn` weichen von denen in den Anzeigeeinstellungen ab, daher nicht verwendet.)
+- **Zwei Threads auf dem Server** (seit 0.3.1): Aufnahme und Encoder laufen parallel; ist der Encoder noch beschäftigt,
+  ersetzt das neueste Bild das ältere (kein Stau, geringste Verzögerung).
 - Videonachricht: `[1 Byte Merker][H.264-Paket]`, Merker Bit 0 = Schlüsselbild.
 - **Voraussetzung:** FFmpeg-9.0-Bibliotheken (DLLs). Einmalig `tools\get-ffmpeg.cmd` ausführen – lädt
   `ffmpeg-9.0.1-full_build-shared` (gyan.dev) nach `ffmpeg\bin`; der Build kopiert die DLLs neben die exe.

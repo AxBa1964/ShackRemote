@@ -6,16 +6,36 @@ namespace ShackRemote.Core.Media;
 /// <summary>
 /// Server: Aufnahme und Kodierung im eigenen Prozess, alles auf der GPU (wie Sunshine/Parsec):
 /// ddagrab (Desktop Duplication, D3D11-Textur) -> hwmap nach QSV -> h264_qsv.
-/// Schlüsselbilder auf Anforderung (RequestKeyframe) statt Encoder-Neustart.
-/// Jedes fertige Paket geht als ein Stück an <see cref="PacketReady"/>.
+///
+/// Zwei Threads wie bei ffmpeg.exe: Der Aufnahme-Thread holt Bilder, der Encoder-Thread kodiert und sendet.
+/// Dazwischen liegt genau ein Platz: Ist der Encoder noch beschäftigt, ersetzt das neue Bild das ältere
+/// (geringste Verzögerung, kein Stau). Schlüsselbilder auf Anforderung statt Encoder-Neustart.
 /// </summary>
 public sealed unsafe class ScreenEncoder : IDisposable
 {
     private readonly int _output;
     private readonly int _fps;
-    private readonly Thread _thread;
+    private readonly Thread _captureThread;
+    private Thread? _encodeThread;
     private volatile bool _stop;
     private int _keyframeRequested = 1;   // erstes Bild immer IDR
+
+    // Übergabeplatz zwischen den Threads
+    private readonly object _slotGate = new();
+    private readonly AutoResetEvent _slotFilled = new(false);
+    private AVFrame* _slot;
+
+    // Statistik
+    private int _captured, _encoded, _replaced;
+    private long _bytes;
+    private int _keys;
+
+    // FFmpeg-Objekte (Aufbau im Aufnahme-Thread)
+    private AVBufferRef* _device;
+    private AVFilterGraph* _graph;
+    private AVFilterContext* _sink;
+    private AVCodecContext* _enc;
+    private AVBSFContext* _bsf;
 
     /// <summary>Kodiertes Paket (Annex B, SPS/PPS vor jedem Schlüsselbild) und ob es ein Schlüsselbild ist.</summary>
     public event Action<byte[], bool>? PacketReady;
@@ -27,123 +47,189 @@ public sealed unsafe class ScreenEncoder : IDisposable
     {
         _output = output;
         _fps = fps;
-        _thread = new Thread(Run) { IsBackground = true, Name = $"Encoder Ausgang {output}", Priority = ThreadPriority.AboveNormal };
+        _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = $"Aufnahme Ausgang {output}", Priority = ThreadPriority.AboveNormal };
     }
 
     public void Start()
     {
         FfmpegLib.EnsureLoaded();
-        _thread.Start();
+        _captureThread.Start();
     }
 
     public void RequestKeyframe() => Interlocked.Exchange(ref _keyframeRequested, 1);
 
-    private void Run()
+    // ---- Aufnahme-Thread ------------------------------------------------------------------------
+
+    private void CaptureLoop()
     {
-        AVBufferRef* device = null;
-        AVFilterGraph* graph = null;
-        AVCodecContext* enc = null;
-        AVBSFContext* bsf = null;
-        AVFrame* frame = ffmpeg.av_frame_alloc();
-        AVPacket* packet = ffmpeg.av_packet_alloc();
         try
         {
-            // --- D3D11-Gerät auf der Intel-GPU (wie "-init_hw_device d3d11va:,vendor_id=0x8086") ---
-            AVDictionary* opts = null;
-            ffmpeg.av_dict_set(&opts, "vendor_id", "0x8086", 0);
-            int ret = ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, opts, 0);
-            ffmpeg.av_dict_free(&opts);
-            if (ret < 0)
-            {
-                Log?.Invoke($"Video: Intel-GPU nicht direkt gefunden ({FfmpegLib.Error(ret)}), nehme Standard-GPU");
-                FfmpegLib.Check(ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, null, 0), "D3D11-Gerät");
-            }
+            Open();
+            _encodeThread = new Thread(EncodeLoop) { IsBackground = true, Name = $"Encoder Ausgang {_output}", Priority = ThreadPriority.AboveNormal };
+            _encodeThread.Start();
 
-            // --- Filtergraph: ddagrab -> hwmap(qsv) -> format=qsv -> buffersink ---
-            graph = ffmpeg.avfilter_graph_alloc();
-            AVFilterContext* sink;
-            FfmpegLib.Check(ffmpeg.avfilter_graph_create_filter(&sink, ffmpeg.avfilter_get_by_name("buffersink"), "out", null, null, graph), "buffersink");
-
-            AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
-            inputs->name = ffmpeg.av_strdup("out");
-            inputs->filter_ctx = sink;
-            inputs->pad_idx = 0;
-            inputs->next = null;
-            AVFilterInOut* outputs = null;
-            var description = $"ddagrab=output_idx={_output}:framerate={_fps}:draw_mouse=1,hwmap=derive_device=qsv,format=qsv";
-            ret = ffmpeg.avfilter_graph_parse_ptr(graph, description, &inputs, &outputs, null);
-            ffmpeg.avfilter_inout_free(&inputs);
-            ffmpeg.avfilter_inout_free(&outputs);
-            FfmpegLib.Check(ret, "Filtergraph");
-
-            // Gerät allen Filtern geben (ddagrab nutzt es beim Konfigurieren)
-            for (uint i = 0; i < graph->nb_filters; i++)
-            {
-                var f = graph->filters[i];
-                if (f->hw_device_ctx == null) f->hw_device_ctx = ffmpeg.av_buffer_ref(device);
-            }
-            // Diagnose: QSV-Einrichtung (hwmap) ausführlich protokollieren
-            ffmpeg.av_log_set_level(ffmpeg.AV_LOG_VERBOSE);
-            try { FfmpegLib.Check(ffmpeg.avfilter_graph_config(graph, null), $"Bildschirmausgang {_output} öffnen"); }
-            finally { ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING); }
-
-            int width = ffmpeg.av_buffersink_get_w(sink);
-            int height = ffmpeg.av_buffersink_get_h(sink);
-            var timeBase = ffmpeg.av_buffersink_get_time_base(sink);
-
-            // --- Encoder h264_qsv, Einstellungen wie in Stufe 0 getestet ---
-            var codec = ffmpeg.avcodec_find_encoder_by_name("h264_qsv");
-            if (codec == null) throw new InvalidOperationException("h264_qsv fehlt in dieser FFmpeg-Version.");
-            enc = ffmpeg.avcodec_alloc_context3(codec);
-            enc->width = width;
-            enc->height = height;
-            enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_QSV;
-            enc->time_base = timeBase;
-            enc->framerate = new AVRational { num = _fps, den = 1 };
-            enc->gop_size = _fps * 2;             // regulär alle 2 s, sonst auf Anforderung
-            enc->max_b_frames = 0;
-            enc->global_quality = 20;             // ICQ wie in Stufe 0
-            enc->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
-            enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
-            ffmpeg.av_opt_set(enc->priv_data, "async_depth", "1", 0);
-            ffmpeg.av_opt_set(enc->priv_data, "forced_idr", "1", 0);
-            Log?.Invoke($"Video: Encoder-Parameter {width}×{height}, time_base {timeBase.num}/{timeBase.den}, " +
-                        $"Format {ffmpeg.av_get_pix_fmt_name((AVPixelFormat)ffmpeg.av_buffersink_get_format(sink))}");
-            // Beim Öffnen ausführlich protokollieren, damit Quick-Sync-Fehler im Server-Protokoll stehen
-            //
-            // Umgehung für die DLL-Fassung von FFmpeg: avutil und avcodec enthalten jeweils eine eigene Kopie
-            // des Intel-oneVPL-Dispatchers. Der Encoder (avcodec) bekommt sonst den "Loader" des QSV-Geräts aus
-            // avutil und findet darüber keine Implementierung ("Error creating a MFX session: -9").
-            // Ohne Loader legt avcodec einen eigenen an und hängt seine Sitzung trotzdem an das gemeinsame Gerät.
-            var framesCtx = (AVHWFramesContext*)ffmpeg.av_buffersink_get_hw_frames_ctx(sink)->data;
-            var qsvDevice = (QsvDeviceContext*)framesCtx->device_ctx->hwctx;
-            var savedLoader = qsvDevice->Loader;
-            qsvDevice->Loader = IntPtr.Zero;
-            ffmpeg.av_log_set_level(ffmpeg.AV_LOG_VERBOSE);
-            try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen"); }
-            finally
-            {
-                ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING);
-                qsvDevice->Loader = savedLoader;   // gehört weiter dem Gerät und wird mit ihm freigegeben
-            }
-
-            // --- SPS/PPS vor jedes Schlüsselbild (dump_extra), damit der Client jederzeit einsteigen kann ---
-            FfmpegLib.Check(ffmpeg.av_bsf_alloc(ffmpeg.av_bsf_get_by_name("dump_extra"), &bsf), "dump_extra");
-            FfmpegLib.Check(ffmpeg.avcodec_parameters_from_context(bsf->par_in, enc), "dump_extra Parameter");
-            bsf->time_base_in = enc->time_base;
-            FfmpegLib.Check(ffmpeg.av_bsf_init(bsf), "dump_extra init");
-
-            Log?.Invoke($"Video: Ausgang {_output}, {width} × {height}, {_fps} fps, h264_qsv im Prozess");
-            Started?.Invoke(width, height);
-
-            long bytes = 0, frames = 0, keys = 0;
             var report = Stopwatch.StartNew();
-
             while (!_stop)
             {
-                ret = ffmpeg.av_buffersink_get_frame(sink, frame);
-                if (ret == FfmpegLib.AVERROR(ffmpeg.EAGAIN)) continue;
-                FfmpegLib.Check(ret, "Aufnahme");
+                var frame = ffmpeg.av_frame_alloc();
+                int ret = ffmpeg.av_buffersink_get_frame(_sink, frame);
+                if (ret < 0)
+                {
+                    ffmpeg.av_frame_free(&frame);
+                    if (ret == FfmpegLib.AVERROR(ffmpeg.EAGAIN)) continue;
+                    FfmpegLib.Check(ret, "Aufnahme");
+                }
+                Interlocked.Increment(ref _captured);
+
+                lock (_slotGate)
+                {
+                    if (_slot != null)
+                    {
+                        // Encoder hat das vorige Bild noch nicht abgeholt: durch das neuere ersetzen
+                        var old = _slot;
+                        ffmpeg.av_frame_free(&old);
+                        _replaced++;
+                    }
+                    _slot = frame;
+                }
+                _slotFilled.Set();
+
+                if (report.Elapsed >= TimeSpan.FromSeconds(5))
+                {
+                    double s = report.Elapsed.TotalSeconds;
+                    int captured = Interlocked.Exchange(ref _captured, 0);
+                    int encoded = Interlocked.Exchange(ref _encoded, 0);
+                    long bytes = Interlocked.Exchange(ref _bytes, 0);
+                    int keys = Interlocked.Exchange(ref _keys, 0);
+                    int replaced;
+                    lock (_slotGate) { replaced = _replaced; _replaced = 0; }
+                    Log?.Invoke($"Video: aufgenommen {captured / s:F0} fps, kodiert {encoded / s:F0} fps, " +
+                                $"{bytes * 8 / 1000 / s:F0} kbit/s, {keys} Schlüsselbilder" +
+                                (replaced > 0 ? $", {replaced} Bilder übersprungen" : ""));
+                    report.Restart();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_stop) Failed?.Invoke(ex.Message);
+        }
+        finally
+        {
+            _stop = true;
+            _slotFilled.Set();
+            if (_encodeThread is { IsAlive: true }) _encodeThread.Join(TimeSpan.FromSeconds(3));
+            lock (_slotGate)
+            {
+                if (_slot != null) { var f = _slot; ffmpeg.av_frame_free(&f); _slot = null; }
+            }
+            Close();
+        }
+    }
+
+    private void Open()
+    {
+        // --- D3D11-Gerät auf der Intel-GPU (wie "-init_hw_device d3d11va:,vendor_id=0x8086") ---
+        AVBufferRef* device = null;
+        AVDictionary* opts = null;
+        ffmpeg.av_dict_set(&opts, "vendor_id", "0x8086", 0);
+        int ret = ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, opts, 0);
+        ffmpeg.av_dict_free(&opts);
+        if (ret < 0)
+        {
+            Log?.Invoke($"Video: Intel-GPU nicht direkt gefunden ({FfmpegLib.Error(ret)}), nehme Standard-GPU");
+            FfmpegLib.Check(ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, null, 0), "D3D11-Gerät");
+        }
+        _device = device;
+
+        // --- Filtergraph: ddagrab -> hwmap(qsv) -> format=qsv -> buffersink ---
+        _graph = ffmpeg.avfilter_graph_alloc();
+        AVFilterContext* sink;
+        FfmpegLib.Check(ffmpeg.avfilter_graph_create_filter(&sink, ffmpeg.avfilter_get_by_name("buffersink"), "out", null, null, _graph), "buffersink");
+        _sink = sink;
+
+        AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
+        inputs->name = ffmpeg.av_strdup("out");
+        inputs->filter_ctx = sink;
+        inputs->pad_idx = 0;
+        inputs->next = null;
+        AVFilterInOut* outputs = null;
+        var description = $"ddagrab=output_idx={_output}:framerate={_fps}:draw_mouse=1,hwmap=derive_device=qsv,format=qsv";
+        ret = ffmpeg.avfilter_graph_parse_ptr(_graph, description, &inputs, &outputs, null);
+        ffmpeg.avfilter_inout_free(&inputs);
+        ffmpeg.avfilter_inout_free(&outputs);
+        FfmpegLib.Check(ret, "Filtergraph");
+
+        // Gerät allen Filtern geben (ddagrab nutzt es beim Konfigurieren)
+        for (uint i = 0; i < _graph->nb_filters; i++)
+        {
+            var f = _graph->filters[i];
+            if (f->hw_device_ctx == null) f->hw_device_ctx = ffmpeg.av_buffer_ref(_device);
+        }
+        FfmpegLib.Check(ffmpeg.avfilter_graph_config(_graph, null), $"Bildschirmausgang {_output} öffnen");
+
+        int width = ffmpeg.av_buffersink_get_w(sink);
+        int height = ffmpeg.av_buffersink_get_h(sink);
+        var timeBase = ffmpeg.av_buffersink_get_time_base(sink);
+
+        // --- Encoder h264_qsv, Einstellungen wie in Stufe 0 getestet ---
+        var codec = ffmpeg.avcodec_find_encoder_by_name("h264_qsv");
+        if (codec == null) throw new InvalidOperationException("h264_qsv fehlt in dieser FFmpeg-Version.");
+        var enc = ffmpeg.avcodec_alloc_context3(codec);
+        _enc = enc;
+        enc->width = width;
+        enc->height = height;
+        enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_QSV;
+        enc->time_base = timeBase;
+        enc->framerate = new AVRational { num = _fps, den = 1 };
+        enc->gop_size = _fps * 2;             // regulär alle 2 s, sonst auf Anforderung
+        enc->max_b_frames = 0;
+        enc->global_quality = 20;             // ICQ wie in Stufe 0
+        enc->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
+        enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
+        ffmpeg.av_opt_set(enc->priv_data, "async_depth", "1", 0);
+        ffmpeg.av_opt_set(enc->priv_data, "forced_idr", "1", 0);
+
+        // Umgehung für die DLL-Fassung von FFmpeg: avutil und avcodec enthalten jeweils eine eigene Kopie
+        // des Intel-oneVPL-Dispatchers. Mit dem "Loader" des QSV-Geräts aus avutil findet der Encoder (avcodec)
+        // keine Implementierung ("Error creating a MFX session: -9", am 11.11.2026 auf dem N100 beobachtet).
+        // Ohne Loader legt avcodec einen eigenen an und hängt seine Sitzung trotzdem an das gemeinsame Gerät.
+        var framesCtx = (AVHWFramesContext*)ffmpeg.av_buffersink_get_hw_frames_ctx(sink)->data;
+        var qsvDevice = (QsvDeviceContext*)framesCtx->device_ctx->hwctx;
+        var savedLoader = qsvDevice->Loader;
+        qsvDevice->Loader = IntPtr.Zero;
+        try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen"); }
+        finally { qsvDevice->Loader = savedLoader; }   // gehört weiter dem Gerät und wird mit ihm freigegeben
+
+        // --- SPS/PPS vor jedes Schlüsselbild (dump_extra), damit der Client jederzeit einsteigen kann ---
+        AVBSFContext* bsf;
+        FfmpegLib.Check(ffmpeg.av_bsf_alloc(ffmpeg.av_bsf_get_by_name("dump_extra"), &bsf), "dump_extra");
+        _bsf = bsf;
+        FfmpegLib.Check(ffmpeg.avcodec_parameters_from_context(bsf->par_in, enc), "dump_extra Parameter");
+        bsf->time_base_in = enc->time_base;
+        FfmpegLib.Check(ffmpeg.av_bsf_init(bsf), "dump_extra init");
+
+        Log?.Invoke($"Video: Ausgang {_output}, {width} × {height}, {_fps} fps, h264_qsv (Aufnahme und Encoder getrennt)");
+        Started?.Invoke(width, height);
+    }
+
+    // ---- Encoder-Thread -------------------------------------------------------------------------
+
+    private void EncodeLoop()
+    {
+        var packet = ffmpeg.av_packet_alloc();
+        try
+        {
+            while (!_stop)
+            {
+                _slotFilled.WaitOne(500);
+                AVFrame* frame;
+                lock (_slotGate)
+                {
+                    frame = _slot;
+                    _slot = null;
+                }
+                if (frame == null) continue;
 
                 if (Interlocked.Exchange(ref _keyframeRequested, 0) == 1)
                 {
@@ -155,48 +241,45 @@ public sealed unsafe class ScreenEncoder : IDisposable
                     frame->pict_type = AVPictureType.AV_PICTURE_TYPE_NONE;
                 }
 
-                ret = ffmpeg.avcodec_send_frame(enc, frame);
-                ffmpeg.av_frame_unref(frame);
+                int ret = ffmpeg.avcodec_send_frame(_enc, frame);
+                ffmpeg.av_frame_free(&frame);
                 FfmpegLib.Check(ret, "Kodieren");
 
-                while (ffmpeg.avcodec_receive_packet(enc, packet) >= 0)
+                while (ffmpeg.avcodec_receive_packet(_enc, packet) >= 0)
                 {
-                    FfmpegLib.Check(ffmpeg.av_bsf_send_packet(bsf, packet), "dump_extra");
-                    while (ffmpeg.av_bsf_receive_packet(bsf, packet) >= 0)
+                    FfmpegLib.Check(ffmpeg.av_bsf_send_packet(_bsf, packet), "dump_extra");
+                    while (ffmpeg.av_bsf_receive_packet(_bsf, packet) >= 0)
                     {
                         bool key = (packet->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0;
                         var data = new byte[packet->size];
                         new ReadOnlySpan<byte>(packet->data, packet->size).CopyTo(data);
                         ffmpeg.av_packet_unref(packet);
 
-                        bytes += data.Length;
-                        frames++;
-                        if (key) keys++;
+                        Interlocked.Add(ref _bytes, data.Length);
+                        Interlocked.Increment(ref _encoded);
+                        if (key) Interlocked.Increment(ref _keys);
                         PacketReady?.Invoke(data, key);
                     }
-                }
-
-                if (report.Elapsed >= TimeSpan.FromSeconds(5))
-                {
-                    Log?.Invoke($"Video: {frames / report.Elapsed.TotalSeconds:F0} fps, {bytes * 8 / 1000 / report.Elapsed.TotalSeconds:F0} kbit/s, {keys} Schlüsselbilder");
-                    bytes = 0; frames = 0; keys = 0;
-                    report.Restart();
                 }
             }
         }
         catch (Exception ex)
         {
             if (!_stop) Failed?.Invoke(ex.Message);
+            _stop = true;
         }
         finally
         {
             ffmpeg.av_packet_free(&packet);
-            ffmpeg.av_frame_free(&frame);
-            if (bsf != null) ffmpeg.av_bsf_free(&bsf);
-            if (enc != null) ffmpeg.avcodec_free_context(&enc);
-            if (graph != null) ffmpeg.avfilter_graph_free(&graph);
-            if (device != null) ffmpeg.av_buffer_unref(&device);
         }
+    }
+
+    private void Close()
+    {
+        if (_bsf != null) { var b = _bsf; ffmpeg.av_bsf_free(&b); _bsf = null; }
+        if (_enc != null) { var e = _enc; ffmpeg.avcodec_free_context(&e); _enc = null; }
+        if (_graph != null) { var g = _graph; ffmpeg.avfilter_graph_free(&g); _graph = null; }
+        if (_device != null) { var d = _device; ffmpeg.av_buffer_unref(&d); _device = null; }
     }
 
     /// <summary>AVQSVDeviceContext aus libavutil/hwcontext_qsv.h (FFmpeg 9.0): mfxSession session; void* loader.</summary>
@@ -209,7 +292,8 @@ public sealed unsafe class ScreenEncoder : IDisposable
     public void Dispose()
     {
         _stop = true;
-        if (_thread.IsAlive && Thread.CurrentThread != _thread)
-            _thread.Join(TimeSpan.FromSeconds(3));
+        _slotFilled.Set();
+        if (_captureThread.IsAlive && Thread.CurrentThread != _captureThread)
+            _captureThread.Join(TimeSpan.FromSeconds(4));
     }
 }
