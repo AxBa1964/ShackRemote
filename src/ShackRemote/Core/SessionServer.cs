@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
+using ShackRemote.Core.Media;
 
 namespace ShackRemote.Core;
 
@@ -134,9 +135,24 @@ public sealed class SessionServer : IDisposable
                     Log?.Invoke($"{name} gekoppelt");
                 }
 
-                await conn.SendControlAsync(new ControlMessage { Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version }, ct);
+                List<MonitorInfo>? monitors = null;
+                try
+                {
+                    monitors = DxgiOutputs.List();
+                    Log?.Invoke("Monitore: " + string.Join(", ", monitors.Select(mo =>
+                        $"Anzeige {mo.Display} = Ausgang {mo.Index} ({mo.Width}×{mo.Height} bei {mo.Left},{mo.Top})")));
+                }
+                catch (Exception ex)
+                {
+                    Log?.Invoke($"Monitore können nicht ermittelt werden: {ex.Message}");
+                }
+
+                await conn.SendControlAsync(new ControlMessage
+                {
+                    Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version, Monitors = monitors,
+                }, ct);
                 connected = true;
-                VideoSource? video = null;
+                ScreenEncoder? video = null;
                 ClientConnected?.Invoke($"{name} ({remote})");
 
                 try
@@ -153,16 +169,10 @@ public sealed class SessionServer : IDisposable
                                 break;
                             case "StartVideo":
                                 video?.Dispose();
-                                video = new VideoSource(conn, msg => Log?.Invoke(msg));
-                                try
-                                {
-                                    await video.StartAsync(Math.Clamp(m.Monitor, 0, 15), VideoFps);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Log?.Invoke($"Video kann nicht starten: {ex.Message}");
-                                    await conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = ex.Message }, ct);
-                                }
+                                video = StartEncoder(conn, Math.Clamp(m.Monitor, 0, 15));
+                                break;
+                            case "RequestKeyframe":
+                                video?.RequestKeyframe();
                                 break;
                             case "StopVideo":
                                 video?.Dispose();
@@ -187,6 +197,38 @@ public sealed class SessionServer : IDisposable
             if (pairingShown) PairingEnded?.Invoke();
             if (connected) ClientDisconnected?.Invoke();
             Interlocked.Exchange(ref _busy, 0);
+        }
+    }
+
+    private ScreenEncoder? StartEncoder(FramedConnection conn, int output)
+    {
+        conn.SendControlAsync(new ControlMessage { Type = "VideoReset", Monitor = output }).GetAwaiter().GetResult();
+        var encoder = new ScreenEncoder(output, VideoFps);
+        encoder.Log += msg => Log?.Invoke(msg);
+        encoder.Started += (w, h) => _ = conn.SendControlAsync(new ControlMessage { Type = "VideoInfo", Monitor = output, Width = w, Height = h });
+        encoder.Failed += msg =>
+        {
+            Log?.Invoke($"Video kann nicht laufen: {msg}");
+            _ = conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = msg });
+        };
+        encoder.PacketReady += (data, key) =>
+        {
+            // Läuft im Encoder-Thread. Warten ist hier gewollt: Ist das Netz langsamer, nimmt ddagrab
+            // einfach das jeweils neueste Bild – es entsteht kein Stau.
+            try { conn.SendAsync(MsgType.Video, VideoPacket.Build(data, key)).GetAwaiter().GetResult(); }
+            catch { /* Verbindung weg – Ende meldet die Leseschleife */ }
+        };
+        try
+        {
+            encoder.Start();
+            return encoder;
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Video kann nicht starten: {ex.Message}");
+            _ = conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = ex.Message });
+            encoder.Dispose();
+            return null;
         }
     }
 

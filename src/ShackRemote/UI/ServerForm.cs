@@ -101,6 +101,7 @@ public sealed class ServerForm : Form
         // --- Logik -------------------------------------------------------------------------
         _server = new SessionServer(cert);
         _server.Log += msg => Ui(() => Log(msg));
+        ShackRemote.Core.Media.FfmpegLib.Log += msg => Ui(() => Log(msg));
         _server.PairingCodeShown += (code, name) => Ui(() =>
         {
             _pairingFor.Text = $"{name} möchte sich verbinden. Diesen Code dort eingeben (2 Minuten gültig):";

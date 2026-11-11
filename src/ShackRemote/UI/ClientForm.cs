@@ -208,6 +208,8 @@ public sealed class ClientForm : Form
             Log($"Verbunden mit {session.ServerName}, Zertifikat {Identity.Short(session.ServerFingerprint)}");
             _disconnect.Enabled = true;
 
+            ShackRemote.Core.Media.FfmpegLib.Log -= Log;
+            ShackRemote.Core.Media.FfmpegLib.Log += Log;
             var remote = new RemoteForm(session);
             remote.Log += msg => Log(msg);
             remote.FormClosed += async (_, _) =>

@@ -29,8 +29,8 @@ public enum MsgType : byte
 }
 
 /// <summary>
-/// Steuernachricht (JSON). Type: Hello, PairRequired, PairProof, PairResult, Welcome, Ping, Pong,
-/// StartVideo (Monitor), StopVideo, VideoReset (Monitor), VideoInfo (Width, Height).
+/// Steuernachricht (JSON). Type: Hello, PairRequired, PairProof, PairResult, Welcome (Monitors), Ping, Pong,
+/// StartVideo (Monitor = DXGI-Ausgang), StopVideo, RequestKeyframe, VideoReset (Monitor), VideoInfo (Width, Height), VideoError.
 /// </summary>
 public sealed class ControlMessage
 {
@@ -44,6 +44,34 @@ public sealed class ControlMessage
     public int Monitor { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
+    public List<MonitorInfo>? Monitors { get; set; }
+}
+
+/// <summary>Ein Bildschirm des Servers. Index = DXGI-Ausgang (für ddagrab), Display = Windows-Anzeigenummer.</summary>
+public sealed class MonitorInfo
+{
+    public int Index { get; set; }
+    public int Display { get; set; }
+    public string DeviceName { get; set; } = "";
+    public int Left { get; set; }
+    public int Top { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public bool Primary { get; set; }
+}
+
+/// <summary>Video-Nachricht: [1 Byte Merker][ein H.264-Paket]. Merker Bit 0 = Schlüsselbild.</summary>
+public static class VideoPacket
+{
+    public const byte KeyFlag = 1;
+
+    public static byte[] Build(byte[] data, bool key)
+    {
+        var payload = new byte[data.Length + 1];
+        payload[0] = key ? KeyFlag : (byte)0;
+        data.CopyTo(payload, 1);
+        return payload;
+    }
 }
 
 /// <summary>Antwort auf die Server-Suche.</summary>

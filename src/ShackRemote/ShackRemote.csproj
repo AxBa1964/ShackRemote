@@ -6,10 +6,23 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ShackRemote</AssemblyName>
     <RootNamespace>ShackRemote</RootNamespace>
-    <Version>0.2.5</Version>
+    <Version>0.3.0</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Bindungen für FFmpeg 9.0 (avcodec-63 …); die DLLs selbst holt tools\get-ffmpeg.ps1 -->
+    <PackageReference Include="FFmpeg.AutoGen" Version="9.0.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FFmpeg-DLLs aus <Repo>\ffmpeg\bin neben die exe kopieren (Build und Publish) -->
+    <None Include="..\..\ffmpeg\bin\*.dll" Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+  </ItemGroup>
 
 </Project>

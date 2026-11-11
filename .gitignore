@@ -19,3 +19,6 @@ tools/stufe0/ffprobe.exe
 tools/stufe0/*.mkv
 tools/stufe0/*.log
 tools/stufe0/messung.csv
+
+# FFmpeg-Bibliotheken (tools\get-ffmpeg.ps1)
+ffmpeg/

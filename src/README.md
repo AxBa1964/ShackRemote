@@ -1,16 +1,31 @@
 # ShackRemote – Quellcode
 
-## Stufe 1b: Bild (Stand 0.2.0)
+## Stufe 1b: Bild (Stand 0.3.0 – GPU-Pipeline im Prozess)
 
-- Nach dem Verbinden öffnet sich das **Sitzungsfenster** mit dem Bild des Shack-Monitors.
-- Oben: Knöpfe **Monitor 1/2/3** (bzw. **Strg+1/2/3**), dazu Auflösung, Anzeigegröße, fps, kbit/s und Ping.
-- Server: `ffmpeg` nimmt per Desktop Duplication auf und kodiert per Quick Sync (Befehl aus Stufe 0),
-  die Daten laufen über die TLS-Verbindung.
-- Client: `ffmpeg` dekodiert und skaliert auf die Fenstergröße; das Seitenverhältnis bleibt erhalten.
-- **Voraussetzung vorerst:** `ffmpeg.exe` auf beiden Rechnern – im PATH (z. B. `winget install ffmpeg`)
-  oder neben `ShackRemote.exe`. Die Einbettung in die Exe folgt später.
-- „Monitor 1/2/3“ entspricht DXGI-Ausgang 0/1/2 – die Reihenfolge kann von der Windows-Nummerierung abweichen.
+Seit 0.3.0 läuft das Bild wie bei Moonlight/Sunshine, RustDesk und Parsec komplett **im eigenen Prozess auf der GPU**
+(vorher: ffmpeg.exe als Hilfsprozess mit Rohbild-Pipe – das staute sich bei Größenänderung und Monitorwechsel).
 
+| Seite | Kette |
+| --- | --- |
+| Server | `ddagrab` (Desktop Duplication, D3D11-Textur) → `hwmap` nach QSV → `h264_qsv` (ICQ 20, keine B-Bilder, async_depth 1) → `dump_extra` → ein Paket je Video-Nachricht |
+| Client | H.264 → D3D11VA-Decoder (NV12-Textur bleibt auf der GPU) → D3D11 Video Processor (NV12 → BGRA + Skalierung) → Swapchain des Fensters |
+
+- **Schlüsselbild auf Anforderung** (`RequestKeyframe`): Beim Einstieg, nach Rückstand oder Fehler fordert der Client ein IDR an –
+  kein Encoder-Neustart mehr. Beim Größe-Ändern des Fensters wird nur die Swapchain angepasst, nichts neu gestartet.
+- **Monitorknöpfe** in derselben Reihenfolge wie beim Server (nach Lage auf dem Desktop, links → rechts),
+  beschriftet mit der Windows-Anzeigenummer (`\\.\DISPLAYn`); ★ = Hauptbildschirm. **Strg+1/2/3** = Knopf 1/2/3 von links.
+- Videonachricht: `[1 Byte Merker][H.264-Paket]`, Merker Bit 0 = Schlüsselbild.
+- **Voraussetzung:** FFmpeg-9.0-Bibliotheken (DLLs). Einmalig `tools\get-ffmpeg.cmd` ausführen – lädt
+  `ffmpeg-9.0.1-full_build-shared` (gyan.dev) nach `ffmpeg\bin`; der Build kopiert die DLLs neben die exe.
+  Ein installiertes `ffmpeg.exe` wird nicht mehr gebraucht.
+
+| Datei | Inhalt |
+| --- | --- |
+| `Core/Media/ScreenEncoder.cs` | Server: Aufnahme + Kodierung (FFmpeg-API über FFmpeg.AutoGen) |
+| `Core/Media/VideoRenderer.cs` | Client: Dekodierung + Anzeige (D3D11 Video Processor, Swapchain) |
+| `Core/Media/DxgiOutputs.cs` | Server: Bildschirme mit DXGI-Index, Anzeigenummer und Lage |
+| `Core/Media/Native.cs` | Schlanker COM-Zugriff (D3D11/DXGI), Positionen aus den Windows-IDL-Dateien |
+| `Core/Media/FfmpegLib.cs` | Laden der FFmpeg-DLLs, FFmpeg-Meldungen ins Protokoll |
 
 ## Stufe 1a: Gerüst (Stand 0.1.0)
 
@@ -33,6 +48,7 @@ Noch **kein** Bild, Ton oder Eingabe (Stufe 1b/1c).
 
 ```
 cd C:\ABDevelop\ShackRemote
+tools\get-ffmpeg.cmd
 dotnet build src\ShackRemote
 dotnet run --project src\ShackRemote -- /server
 dotnet run --project src\ShackRemote -- /client

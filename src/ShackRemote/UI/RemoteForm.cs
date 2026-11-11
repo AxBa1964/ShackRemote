@@ -1,25 +1,25 @@
 using ShackRemote.Core;
+using ShackRemote.Core.Media;
 
 namespace ShackRemote.UI;
 
 /// <summary>
 /// Sitzungsfenster (wie bei AnyDesk): Bild des Shack-Monitors, oben Monitorumschaltung und Messwerte.
-/// Stufe 1b: nur Anzeige. Maus, Tastatur und Ton folgen in Stufe 1c.
+/// Die Monitorknöpfe stehen in derselben Reihenfolge wie die Bildschirme beim Server (links nach rechts).
+/// Maus, Tastatur und Ton folgen in Stufe 1c.
 /// </summary>
 public sealed class RemoteForm : Form
 {
     private readonly SessionClient _session;
     private readonly VideoPanel _video;
     private readonly Label _info;
-    private readonly Button[] _monitorButtons;
-    private readonly System.Windows.Forms.Timer _resizeTimer = new() { Interval = 300 };
+    private readonly List<(MonitorInfo Monitor, Button Button)> _monitors = new();
+    private readonly System.Windows.Forms.Timer _resizeTimer = new() { Interval = 100 };
     private readonly System.Windows.Forms.Timer _statsTimer = new() { Interval = 1000 };
 
-    private VideoDecoder? _decoder;
-    private int _sourceWidth = 1920, _sourceHeight = 1080;   // bis VideoInfo vom Server kommt
-    private int _monitor;
+    private VideoRenderer? _renderer;
+    private MonitorInfo? _current;
     private long _bytes;
-    private int _framesDecoded;
     private double _lastRtt;
 
     public event Action<string>? Log;
@@ -33,17 +33,10 @@ public sealed class RemoteForm : Form
         MinimumSize = new Size(480, 320);
         KeyPreview = true;
 
-        // --- Werkzeugleiste ----------------------------------------------------------
-        _monitorButtons = Enumerable.Range(0, 3).Select(i =>
-        {
-            var b = LayoutKit.MakeButton($"Monitor {i + 1}");
-            b.MinimumSize = new Size(100, 0);
-            b.Click += async (_, _) => await SwitchMonitorAsync(i);
-            return b;
-        }).ToArray();
-
-        _info = LayoutKit.MakeLabel("");
-        _info.Margin = new Padding(12, 9, 3, 3);
+        // --- Werkzeugleiste: Monitore wie beim Server angeordnet ------------------------
+        var list = session.Monitors.Count > 0
+            ? session.Monitors.OrderBy(m => m.Left).ThenBy(m => m.Top).ToList()
+            : Enumerable.Range(0, 3).Select(i => new MonitorInfo { Index = i, Display = i + 1, Width = 1920, Height = 1080 }).ToList();
 
         var toolbar = new FlowLayoutPanel
         {
@@ -53,7 +46,20 @@ public sealed class RemoteForm : Form
             Padding = new Padding(6, 4, 6, 2),
             WrapContents = false,
         };
-        toolbar.Controls.AddRange(_monitorButtons);
+        var tips = new ToolTip();
+        for (int pos = 0; pos < list.Count; pos++)
+        {
+            var monitor = list[pos];
+            var b = LayoutKit.MakeButton($"Monitor {monitor.Display}" + (monitor.Primary ? " ★" : ""));
+            b.MinimumSize = new Size(110, 0);
+            b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
+            tips.SetToolTip(b, $"Strg+{pos + 1} · {monitor.Width} × {monitor.Height} · {monitor.DeviceName}");
+            _monitors.Add((monitor, b));
+            toolbar.Controls.Add(b);
+        }
+
+        _info = LayoutKit.MakeLabel("");
+        _info.Margin = new Padding(12, 9, 3, 3);
         toolbar.Controls.Add(_info);
 
         _video = new VideoPanel { Dock = DockStyle.Fill };
@@ -64,56 +70,82 @@ public sealed class RemoteForm : Form
 
         // --- Ereignisse ----------------------------------------------------------------
         _session.VideoData += OnVideoData;
-        _session.VideoReset += OnVideoReset;
         _session.VideoInfo += OnVideoInfo;
         _session.VideoError += OnVideoError;
         _session.RoundTripMeasured += OnRtt;
 
-        _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); RestartDecoderIfSizeChanged(); };
+        _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); _renderer?.Resize(_video.ClientSize.Width, _video.ClientSize.Height); };
         _video.Resize += (_, _) => { _resizeTimer.Stop(); _resizeTimer.Start(); };
         _statsTimer.Tick += (_, _) => UpdateStats();
 
-        // Strg+1/2/3 wechselt den Monitor (Tastenkürzel auch im Vollbild nutzbar)
+        // Strg+1..9 = Knopf an dieser Position (von links)
         KeyDown += async (_, e) =>
         {
-            if (e.Control && e.KeyCode is Keys.D1 or Keys.D2 or Keys.D3)
+            if (e.Control && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D9)
             {
-                e.Handled = true;
-                await SwitchMonitorAsync(e.KeyCode - Keys.D1);
+                int pos = e.KeyCode - Keys.D1;
+                if (pos < _monitors.Count)
+                {
+                    e.Handled = true;
+                    await SwitchMonitorAsync(_monitors[pos].Monitor);
+                }
             }
         };
 
         Shown += async (_, _) =>
         {
+            StartRenderer();
             _statsTimer.Start();
-            await SwitchMonitorAsync(0);
+            var first = list.FirstOrDefault(m => m.Primary) ?? list[0];
+            await SwitchMonitorAsync(first);
         };
 
         FormClosing += async (_, _) =>
         {
             _statsTimer.Stop();
             _session.VideoData -= OnVideoData;
-            _session.VideoReset -= OnVideoReset;
             _session.VideoInfo -= OnVideoInfo;
             _session.VideoError -= OnVideoError;
             _session.RoundTripMeasured -= OnRtt;
-            _decoder?.Dispose();
-            _decoder = null;
+            var r = _renderer;
+            _renderer = null;
+            _video.Renderer = null;
+            r?.Dispose();
             try { await _session.StopVideoAsync(); } catch { /* Verbindung evtl. schon weg */ }
         };
     }
 
-    private async Task SwitchMonitorAsync(int monitor)
+    private void StartRenderer()
     {
-        _monitor = monitor;
-        for (int i = 0; i < _monitorButtons.Length; i++)
-            _monitorButtons[i].Font = new Font(Font, i == monitor ? FontStyle.Bold : FontStyle.Regular);
-        Log?.Invoke($"Monitor {monitor + 1} angefordert");
-        RestartDecoder();
-        _video.Clear();
         try
         {
-            await _session.StartVideoAsync(monitor);
+            var r = new VideoRenderer(_video.Handle, _video.ClientSize.Width, _video.ClientSize.Height);
+            r.Log += msg => Ui(() => Log?.Invoke(msg));
+            r.KeyframeNeeded += () => Ui(async () =>
+            {
+                try { await _session.RequestKeyframeAsync(); } catch { }
+            });
+            r.Start();
+            _renderer = r;
+            _video.Renderer = r;
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Anzeige kann nicht starten: {ex.Message}");
+            _info.Text = ex.Message;
+        }
+    }
+
+    private async Task SwitchMonitorAsync(MonitorInfo monitor)
+    {
+        _current = monitor;
+        foreach (var (m, b) in _monitors)
+            b.Font = new Font(Font, ReferenceEquals(m, monitor) ? FontStyle.Bold : FontStyle.Regular);
+        Log?.Invoke($"Monitor {monitor.Display} angefordert (DXGI-Ausgang {monitor.Index})");
+        _renderer?.Reset();
+        try
+        {
+            await _session.StartVideoAsync(monitor.Index);
         }
         catch (Exception ex)
         {
@@ -123,25 +155,14 @@ public sealed class RemoteForm : Form
 
     // ---- Aus der Leseschleife der Sitzung (Hintergrund-Thread) ---------------------------
 
-    private void OnVideoData(byte[] data)
+    private void OnVideoData(byte[] data, bool key)
     {
         Interlocked.Add(ref _bytes, data.Length);
-        _decoder?.Write(data);
-    }
-
-    private void OnVideoReset(int monitor)
-    {
-        // Der Decoder wurde vor der Anforderung bereits neu gestartet und wartet auf den Anfang des neuen Datenstroms.
+        _renderer?.Submit(data, key);
     }
 
     private void OnVideoInfo(int width, int height) => Ui(() =>
-    {
-        bool changed = width != _sourceWidth || height != _sourceHeight;
-        _sourceWidth = width;
-        _sourceHeight = height;
-        Log?.Invoke($"Shack-Monitor {_monitor + 1}: {width} × {height}");
-        if (changed) _ = RestartWithFreshStreamAsync();
-    });
+        Log?.Invoke($"Shack-Monitor {_current?.Display}: {width} × {height}"));
 
     private void OnVideoError(string message) => Ui(() =>
     {
@@ -151,77 +172,17 @@ public sealed class RemoteForm : Form
 
     private void OnRtt(double ms) => _lastRtt = ms;
 
-    // ---- Decoder ------------------------------------------------------------------------------
-
-    private Size TargetSize()
-    {
-        var area = _video.ClientSize;
-        if (area.Width < 16 || area.Height < 16) return new Size(320, 180);
-        double scale = Math.Min((double)area.Width / _sourceWidth, (double)area.Height / _sourceHeight);
-        // Decoder liefert höchstens die Originalgröße (Datenmenge!); größer zieht das Anzeigefeld das Bild selbst.
-        scale = Math.Min(scale, 1.0);
-        int w = Math.Max(64, (int)(_sourceWidth * scale)) & ~1;   // gerade Werte
-        int h = Math.Max(64, (int)(_sourceHeight * scale)) & ~1;
-        return new Size(w, h);
-    }
-
-    private void RestartDecoderIfSizeChanged()
-    {
-        var target = TargetSize();
-        if (_decoder is null || _decoder.Width != target.Width || _decoder.Height != target.Height)
-            _ = RestartWithFreshStreamAsync();
-    }
-
-    /// <summary>
-    /// Neuer Decoder braucht einen Datenstrom ab Anfang (der Quick-Sync-Encoder liefert die Bildparameter
-    /// offenbar nur zu Beginn). Daher den laufenden Monitor beim Server neu anfordern.
-    /// </summary>
-    private async Task RestartWithFreshStreamAsync()
-    {
-        RestartDecoder();
-        try { await _session.StartVideoAsync(_monitor); }
-        catch (Exception ex) { Log?.Invoke($"Neuanforderung fehlgeschlagen: {ex.Message}"); }
-    }
-
-    private void RestartDecoder()
-    {
-        _decoder?.Dispose();
-        var size = TargetSize();
-        try
-        {
-            var d = new VideoDecoder(size.Width, size.Height);
-            d.FrameReady += (frame, w, h) =>
-            {
-                if (!ReferenceEquals(Volatile.Read(ref _decoder), d)) return;   // spätes Bild eines alten Decoders
-                Interlocked.Increment(ref _framesDecoded);
-                _video.UpdateFrame(frame, w, h);
-            };
-            d.Log += msg => Ui(() => Log?.Invoke(msg));
-            d.KeyframeNeeded += () => Ui(async () =>
-            {
-                if (!ReferenceEquals(_decoder, d)) return;
-                Log?.Invoke("Decoder braucht neuen Stromanfang – fordere an");
-                try { await _session.StartVideoAsync(_monitor); } catch { }
-            });
-            _decoder = d;
-        }
-        catch (Exception ex)
-        {
-            _decoder = null;
-            Log?.Invoke($"Decoder kann nicht starten: {ex.Message}");
-            _info.Text = ex.Message;
-        }
-    }
-
     private void UpdateStats()
     {
         long bytes = Interlocked.Exchange(ref _bytes, 0);
-        int frames = Interlocked.Exchange(ref _framesDecoded, 0);
-        int drops = _decoder?.TakeDrops() ?? 0;
-        var size = _decoder is null ? "–" : $"{_decoder.Width} × {_decoder.Height}";
-        _info.Text = $"Monitor {_monitor + 1} ({_sourceWidth} × {_sourceHeight})   Anzeige {size}   " +
-                     $"{frames} fps dekodiert / {_video.TakeFramesShown()} angezeigt   {bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
-                     (drops > 0 ? $"   Neusync {drops}×" : "") + "   Strg+1/2/3: Monitor";
+        var r = _renderer;
+        int decoded = r is null ? 0 : Interlocked.Exchange(ref r.FramesDecoded, 0);
+        int shown = r is null ? 0 : Interlocked.Exchange(ref r.FramesShown, 0);
+        int resync = r is null ? 0 : Interlocked.Exchange(ref r.Resyncs, 0);
+        var src = r is null || r.SourceWidth == 0 ? "–" : $"{r.SourceWidth} × {r.SourceHeight}";
+        _info.Text = $"Monitor {_current?.Display} ({src})   {decoded} fps dekodiert / {shown} angezeigt   " +
+                     $"{bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
+                     (resync > 0 ? $"   Neusync {resync}×" : "") + "   Strg+1/2/3: Monitor";
     }
 
     private void Ui(Action action)

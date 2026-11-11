@@ -19,13 +19,14 @@ public sealed class SessionClient : IAsyncDisposable
 
     public event Action<double>? RoundTripMeasured;   // Millisekunden
     public event Action<string>? Disconnected;
-    public event Action<byte[]>? VideoData;
+    public event Action<byte[], bool>? VideoData;      // H.264-Paket, Schlüsselbild?
     public event Action<int>? VideoReset;            // Monitor
     public event Action<int, int>? VideoInfo;        // Breite, Höhe
     public event Action<string>? VideoError;
 
     public string ServerName { get; private set; } = "";
     public string ServerFingerprint { get; private set; } = "";
+    public List<MonitorInfo> Monitors { get; private set; } = new();
 
     public SessionClient(X509Certificate2 cert)
     {
@@ -83,6 +84,7 @@ public sealed class SessionClient : IAsyncDisposable
         if (m.Type != "Welcome")
             throw new InvalidDataException($"Unerwartete Antwort: {m.Type}");
         ServerName = m.Name ?? address.ToString();
+        Monitors = m.Monitors ?? new();
 
         _ = Task.Run(ReadLoopAsync);
         _ = Task.Run(PingLoopAsync);
@@ -98,7 +100,8 @@ public sealed class SessionClient : IAsyncDisposable
                 var (type, payload) = await _conn!.ReadAsync(ct);
                 if (type == MsgType.Video)
                 {
-                    VideoData?.Invoke(payload);
+                    if (payload.Length > 1)
+                        VideoData?.Invoke(payload[1..], (payload[0] & VideoPacket.KeyFlag) != 0);
                     continue;
                 }
                 if (type != MsgType.Control) continue;
@@ -138,6 +141,9 @@ public sealed class SessionClient : IAsyncDisposable
 
     public Task StartVideoAsync(int monitor) =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StartVideo", Monitor = monitor }, _cts.Token);
+
+    public Task RequestKeyframeAsync() =>
+        _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);
 
     public Task StopVideoAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StopVideo" }, _cts.Token);
