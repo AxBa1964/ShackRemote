@@ -83,10 +83,12 @@ public sealed class FramedConnection
         await _writeLock.WaitAsync(ct);
         try
         {
-            await _stream.WriteAsync(header, ct);
+            // Bewusst OHNE Abbruch-Token: Ein mitten im Schreiben abgebrochener TLS-Datensatz
+            // zerstört die Verbindung ("The decryption operation failed" auf der Gegenseite).
+            await _stream.WriteAsync(header, CancellationToken.None);
             if (payload.Length > 0)
-                await _stream.WriteAsync(payload, ct);
-            await _stream.FlushAsync(ct);
+                await _stream.WriteAsync(payload, CancellationToken.None);
+            await _stream.FlushAsync(CancellationToken.None);
         }
         finally
         {

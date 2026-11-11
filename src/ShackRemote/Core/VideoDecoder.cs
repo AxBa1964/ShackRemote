@@ -8,15 +8,15 @@ namespace ShackRemote.Core;
 /// gewünschten Anzeigegröße (Skalierung übernimmt ffmpeg, bikubisch).
 ///
 /// Gegen wachsende Verzögerung: Daten landen erst in einer Warteschlange. Hängt der Decoder mehr als
-/// <see cref="MaxQueueAge"/> hinterher, wird alles verworfen und sofort ein frischer Datenstrom angefordert
-/// (der Quick-Sync-Strom enthält die Bildparameter SPS nur am Anfang). Lieber kurz ein Standbild als
-/// dauerhaft Sekunden hinterher.
+/// <see cref="MaxQueueAge"/> hinterher, wird bis zum nächsten Schlüsselbild verworfen (die Bildparameter SPS
+/// kommen dank dump_extra vor jedem Schlüsselbild mit, also spätestens nach 1 s). Nur wenn 2 s lang kein
+/// Schlüsselbild kommt, wird beim Server ein neuer Datenstrom angefordert.
 /// </summary>
 public sealed class VideoDecoder : IDisposable
 {
     private static readonly TimeSpan MaxQueueAge = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(1);   // Prozessstart abwarten, bevor Verzögerung gemessen wird
-    private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(3);
 
     private readonly CancellationTokenSource _cts = new();
     private readonly BlockingCollection<(byte[] Data, long Time)> _queue = new(new ConcurrentQueue<(byte[], long)>());
@@ -86,11 +86,10 @@ public sealed class VideoDecoder : IDisposable
                 var age = Stopwatch.GetElapsedTime(time);
                 if (!dropping && warm && age > MaxQueueAge)
                 {
-                    Log?.Invoke($"Decoder: {age.TotalMilliseconds:F0} ms Rückstand ({_queue.Count} Pakete wartend) – verwerfe, fordere neuen Strom an");
+                    Log?.Invoke($"Decoder: {age.TotalMilliseconds:F0} ms Rückstand ({_queue.Count} Pakete wartend) – verwerfe bis zum nächsten Schlüsselbild");
                     dropping = true;
                     dropSince = Stopwatch.GetTimestamp();
                     Interlocked.Increment(ref _drops);
-                    RequestKeyframe(ref lastRequest);          // sofort, ein SPS kommt sonst nie
                 }
 
                 int offset = 0;
@@ -99,7 +98,7 @@ public sealed class VideoDecoder : IDisposable
                     offset = FindSps(data);
                     if (offset < 0)
                     {
-                        if (Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1) && RequestKeyframe(ref lastRequest))
+                        if (Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(2) && RequestKeyframe(ref lastRequest))
                             Log?.Invoke($"Decoder: seit {Stopwatch.GetElapsedTime(dropSince).TotalSeconds:F1} s kein Schlüsselbild im Datenstrom – fordere neuen Strom an");
                         continue;
                     }

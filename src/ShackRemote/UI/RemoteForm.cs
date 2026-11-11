@@ -220,7 +220,7 @@ public sealed class RemoteForm : Form
         int drops = _decoder?.TakeDrops() ?? 0;
         var size = _decoder is null ? "–" : $"{_decoder.Width} × {_decoder.Height}";
         _info.Text = $"Monitor {_monitor + 1} ({_sourceWidth} × {_sourceHeight})   Anzeige {size}   " +
-                     $"{frames} fps   {bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
+                     $"{frames} fps dekodiert / {_video.TakeFramesShown()} angezeigt   {bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
                      (drops > 0 ? $"   Neusync {drops}×" : "") + "   Strg+1/2/3: Monitor";
     }
 

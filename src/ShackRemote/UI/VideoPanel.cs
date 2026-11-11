@@ -13,7 +13,10 @@ public sealed class VideoPanel : Control
     private Bitmap? _bitmap;
     private int _invalidatePending;
 
-    public int FramesShown { get; private set; }
+    private int _framesShown;
+
+    /// <summary>Tatsächlich gezeichnete Bilder seit dem letzten Abruf.</summary>
+    public int TakeFramesShown() => Interlocked.Exchange(ref _framesShown, 0);
 
     /// <summary>Rechteck, in dem das Bild gerade liegt (für Mauskoordinaten in Stufe 1c).</summary>
     public Rectangle ImageBounds { get; private set; }
@@ -27,7 +30,10 @@ public sealed class VideoPanel : Control
     /// <summary>Aus dem Decoder-Thread: BGRA-Puffer in die Bitmap kopieren und Neuzeichnen anstoßen.</summary>
     public void UpdateFrame(byte[] bgra, int width, int height)
     {
-        lock (_gate)
+        // Zeichnet die Oberfläche gerade (Vergrößern kostet Zeit), dieses Bild nur für die Anzeige auslassen.
+        // Der Decoder darf hier NIE warten – sonst staut sich der Datenstrom und die Verzögerung wächst.
+        if (!Monitor.TryEnter(_gate)) return;
+        try
         {
             if (_bitmap is null || _bitmap.Width != width || _bitmap.Height != height)
             {
@@ -51,6 +57,10 @@ public sealed class VideoPanel : Control
             {
                 _bitmap.UnlockBits(data);
             }
+        }
+        finally
+        {
+            Monitor.Exit(_gate);
         }
 
         // Nur ein Neuzeichnen gleichzeitig anstoßen – sonst staut sich die Nachrichtenschleife.
@@ -99,7 +109,7 @@ public sealed class VideoPanel : Control
                 g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
                 g.DrawImage(_bitmap, ImageBounds);
             }
-            FramesShown++;
+            Interlocked.Increment(ref _framesShown);
         }
     }
 
