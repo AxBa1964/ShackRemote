@@ -461,7 +461,9 @@ public sealed unsafe class ScreenEncoder : IDisposable
     /// <summary>AVQSVDeviceContext aus libavutil/hwcontext_qsv.h (FFmpeg 9.0): mfxSession session; void* loader.</summary>
     private struct QsvDeviceContext
     {
+#pragma warning disable CS0649 // nur für das Speicherlayout (FFmpeg füllt das Feld)
         public IntPtr Session;
+#pragma warning restore CS0649
         public IntPtr Loader;
     }
 
