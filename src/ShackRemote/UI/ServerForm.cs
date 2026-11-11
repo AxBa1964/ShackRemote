@@ -100,7 +100,7 @@ public sealed class ServerForm : Form
         // --- Dienst (für Sperrbildschirm, Strg+Alt+Entf, Start mit Windows) ------------------
         _serviceState = LayoutKit.MakeLabel("");
         _serviceState.MaximumSize = new Size(640, 0);
-        _serviceInstall = LayoutKit.MakeButton("Dienst einrichten");
+        _serviceInstall = Theme.Primary(LayoutKit.MakeButton("Dienst einrichten"));
         _serviceRemove = LayoutKit.MakeButton("Dienst entfernen");
         _serviceInstall.Click += async (_, _) => await ServiceActionAsync(install: true);
         _serviceRemove.Click += async (_, _) => await ServiceActionAsync(install: false);
@@ -131,6 +131,11 @@ public sealed class ServerForm : Form
         root.Controls.Add(_pairingBox, 0, 6);
         root.Controls.Add(_log, 0, 7);
         Controls.Add(root);
+        var headerRight = mode == ServerMode.Agent
+            ? new Control[] { LayoutKit.InfoButton(this) }
+            : new Control[] { LayoutKit.ThemePicker(this), LayoutKit.InfoButton(this) };
+        Controls.Add(LayoutKit.Header("ShackRemote Server",
+            $"{Environment.MachineName} · Version {Protocol.Version}" + (mode == ServerMode.Agent ? " · Dienstbetrieb" : ""), headerRight));
         ResumeLayout(true);
 
         // --- Logik -------------------------------------------------------------------------

@@ -9,6 +9,9 @@ namespace ShackRemote.Core;
 public sealed class AppSettings
 {
     public string? Role { get; set; }
+
+    /// <summary>Darstellung: "System", "Hell" oder "Dunkel".</summary>
+    public string? Design { get; set; } = "System";
     public bool RememberRole { get; set; }
 
     /// <summary>Server: IPv4-Adressen, auf denen NICHT gelauscht werden soll.</summary>

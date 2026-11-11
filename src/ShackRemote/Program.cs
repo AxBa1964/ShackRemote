@@ -57,6 +57,16 @@ internal static class Program
         if (agent)
             AppSettings.UseMachineFolder(ServiceSetup.DataFolder);
 
+        // Darstellung (System/Hell/Dunkel) vor dem ersten Fenster festlegen
+        Theme.Init(Theme.Parse(AppSettings.Read(s => s.Design)));
+
+        // Startfenster mit Lizenzhinweis – nicht im Dienstbetrieb
+        if (!agent)
+        {
+            using var intro = new IntroForm();
+            intro.ShowDialog();
+        }
+
         string? role = agent || Has("/server") ? "server"
                      : Has("/client") ? "client"
                      : (!Has("/rolle") && AppSettings.Read(s => s.RememberRole)) ? AppSettings.Read(s => s.Role)

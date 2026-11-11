@@ -1,5 +1,16 @@
 # ShackRemote – Quellcode
 
+## Startfenster und Darstellung (Stand 0.9.0)
+
+- **Startfenster** (`UI/IntroForm.cs`) bei jedem Start außer im Dienstbetrieb: links gezeichnete Szene (Mann am PC,
+  Shack mit Beam auf der Anhöhe, gleicher Wasserfall auf beiden Monitoren), rechts Name, Version, © Axel Baruschke ·
+  DK7EE, freie Verwendung, Haftungsausschluss, verwendete Bausteine. Eigenes Bild: `intro.png` neben die Exe legen.
+  Über den Knopf „Info“ in den Hauptfenstern erneut aufrufbar.
+- **Darstellung System / Hell / Dunkel** (`UI/Theme.cs`): `Application.SetColorMode` (WinForms, in .NET 10 noch
+  experimentell, dunkel erst ab Windows 11) plus eigene Palette, dunkle Titelleiste, flache Knöpfe, Akzentfarbe für die
+  Hauptaktion, Kopfzeile in den Hauptfenstern. Wechsel wirkt nach Neustart (wird angeboten).
+- **Lizenzhinweis:** Die mitgelieferten FFmpeg-DLLs (gyan.dev „full“) sind unter GPL v3 gebaut – bei Weitergabe beachten.
+
 ## Dateien (Stand 0.8.0)
 
 - **Dateifenster** (Knopf „Dateien“ im Fernsteuerungsfenster): links Laptop, rechts Shack-PC, jeweils Laufwerksübersicht,

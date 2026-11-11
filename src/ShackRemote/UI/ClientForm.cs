@@ -48,7 +48,7 @@ public sealed class ClientForm : Form
 
         _search = LayoutKit.MakeButton("Suchen");
         _search.Click += async (_, _) => await SearchAsync();
-        _connect = LayoutKit.MakeButton("Verbinden");
+        _connect = Theme.Primary(LayoutKit.MakeButton("Verbinden"));
         _connect.Click += async (_, _) => await ConnectSelectedAsync();
         _disconnect = LayoutKit.MakeButton("Trennen");
         _disconnect.Enabled = false;
@@ -87,6 +87,8 @@ public sealed class ClientForm : Form
         root.Controls.Add(_rtt, 0, 4);
         root.Controls.Add(_log, 0, 5);
         Controls.Add(root);
+        Controls.Add(LayoutKit.Header("ShackRemote Client", $"{Environment.MachineName} · Version {Protocol.Version}",
+            LayoutKit.ThemePicker(this), LayoutKit.InfoButton(this)));
         ResumeLayout(true);
 
         Log($"Eigenes Zertifikat: {Identity.Short(Identity.Fingerprint(_cert))}");
