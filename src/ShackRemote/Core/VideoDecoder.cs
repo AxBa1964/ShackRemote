@@ -7,13 +7,16 @@ namespace ShackRemote.Core;
 /// Client: dekodiert den H.264-Datenstrom mit ffmpeg und liefert fertige BGRA-Bilder in der
 /// gewünschten Anzeigegröße (Skalierung übernimmt ffmpeg, bikubisch).
 ///
-/// Gegen wachsende Verzögerung: Daten landen erst in einer Warteschlange. Sind die ältesten Daten
-/// älter als <see cref="MaxQueueAge"/>, wird alles verworfen bis zum nächsten Schlüsselbild
-/// (SPS-Kennung im Datenstrom). Lieber kurz ein Standbild als dauerhaft Sekunden hinterher.
+/// Gegen wachsende Verzögerung: Daten landen erst in einer Warteschlange. Hängt der Decoder mehr als
+/// <see cref="MaxQueueAge"/> hinterher, wird alles verworfen und sofort ein frischer Datenstrom angefordert
+/// (der Quick-Sync-Strom enthält die Bildparameter SPS nur am Anfang). Lieber kurz ein Standbild als
+/// dauerhaft Sekunden hinterher.
 /// </summary>
 public sealed class VideoDecoder : IDisposable
 {
-    private static readonly TimeSpan MaxQueueAge = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan MaxQueueAge = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(1);   // Prozessstart abwarten, bevor Verzögerung gemessen wird
+    private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(2);
 
     private readonly CancellationTokenSource _cts = new();
     private readonly BlockingCollection<(byte[] Data, long Time)> _queue = new(new ConcurrentQueue<(byte[], long)>());
@@ -30,7 +33,7 @@ public sealed class VideoDecoder : IDisposable
     public event Action<byte[], int, int>? FrameReady;
     public event Action<string>? Log;
 
-    /// <summary>Seit über 1 s kein Neueinstieg möglich (kein SPS im Datenstrom) – frischen Datenstrom anfordern.</summary>
+    /// <summary>Decoder braucht einen neuen Stromanfang (Start ohne SPS oder Rückstand) – beim Server anfordern.</summary>
     public event Action? KeyframeNeeded;
 
     public VideoDecoder(int width, int height)
@@ -69,21 +72,23 @@ public sealed class VideoDecoder : IDisposable
 
     private void WriteLoop()
     {
-        // Ein neuer Decoder wartet immer zuerst auf SPS – Restdaten eines alten Datenstroms werden verworfen.
+        // Ein neuer Decoder wartet zuerst auf SPS – Restdaten eines alten Datenstroms werden verworfen.
         bool dropping = true;
         long dropSince = Stopwatch.GetTimestamp();
-        bool keyframeRequested = false;
+        long firstWrite = 0;                 // 0 = noch nichts geschrieben
+        long lastRequest = 0;
         try
         {
             var stdin = _process.StandardInput.BaseStream;
             foreach (var (data, time) in _queue.GetConsumingEnumerable(_cts.Token))
             {
-                if (!dropping && Stopwatch.GetElapsedTime(time) > MaxQueueAge)
+                bool warm = firstWrite != 0 && Stopwatch.GetElapsedTime(firstWrite) > Warmup;
+                if (!dropping && warm && Stopwatch.GetElapsedTime(time) > MaxQueueAge)
                 {
                     dropping = true;
                     dropSince = Stopwatch.GetTimestamp();
-                    keyframeRequested = false;
                     Interlocked.Increment(ref _drops);
+                    RequestKeyframe(ref lastRequest);          // sofort, ein SPS kommt sonst nie
                 }
 
                 int offset = 0;
@@ -92,14 +97,12 @@ public sealed class VideoDecoder : IDisposable
                     offset = FindSps(data);
                     if (offset < 0)
                     {
-                        if (!keyframeRequested && Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1))
-                        {
-                            keyframeRequested = true;
-                            KeyframeNeeded?.Invoke();
-                        }
-                        continue;                    // weiter verwerfen
+                        if (Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1))
+                            RequestKeyframe(ref lastRequest);  // Start ohne SPS: einmal nachfordern
+                        continue;
                     }
-                    dropping = false;                // ab hier sauberer Neueinstieg
+                    dropping = false;                          // sauberer Neueinstieg
+                    if (firstWrite == 0) firstWrite = Stopwatch.GetTimestamp();
                 }
 
                 stdin.Write(data, offset, data.Length - offset);
@@ -110,6 +113,13 @@ public sealed class VideoDecoder : IDisposable
         {
             // Ende: Abbruch oder Prozess beendet. Dispose() beendet den Prozess, dadurch löst sich ein hängendes Write.
         }
+    }
+
+    private void RequestKeyframe(ref long lastRequest)
+    {
+        if (lastRequest != 0 && Stopwatch.GetElapsedTime(lastRequest) < RequestInterval) return;
+        lastRequest = Stopwatch.GetTimestamp();
+        KeyframeNeeded?.Invoke();
     }
 
     /// <summary>Sucht den Beginn einer SPS-Einheit (NAL-Typ 7, Startcode 00 00 01). -1 = nicht gefunden.</summary>

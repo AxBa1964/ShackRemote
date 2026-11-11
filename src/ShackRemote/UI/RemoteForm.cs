@@ -109,8 +109,8 @@ public sealed class RemoteForm : Form
         for (int i = 0; i < _monitorButtons.Length; i++)
             _monitorButtons[i].Font = new Font(Font, i == monitor ? FontStyle.Bold : FontStyle.Regular);
         Log?.Invoke($"Monitor {monitor + 1} angefordert");
-        _video.Clear();
         RestartDecoder();
+        _video.Clear();
         try
         {
             await _session.StartVideoAsync(monitor);
@@ -158,6 +158,8 @@ public sealed class RemoteForm : Form
         var area = _video.ClientSize;
         if (area.Width < 16 || area.Height < 16) return new Size(320, 180);
         double scale = Math.Min((double)area.Width / _sourceWidth, (double)area.Height / _sourceHeight);
+        // Decoder liefert höchstens die Originalgröße (Datenmenge!); größer zieht das Anzeigefeld das Bild selbst.
+        scale = Math.Min(scale, 1.0);
         int w = Math.Max(64, (int)(_sourceWidth * scale)) & ~1;   // gerade Werte
         int h = Math.Max(64, (int)(_sourceHeight * scale)) & ~1;
         return new Size(w, h);
@@ -190,6 +192,7 @@ public sealed class RemoteForm : Form
             var d = new VideoDecoder(size.Width, size.Height);
             d.FrameReady += (frame, w, h) =>
             {
+                if (!ReferenceEquals(Volatile.Read(ref _decoder), d)) return;   // spätes Bild eines alten Decoders
                 Interlocked.Increment(ref _framesDecoded);
                 _video.UpdateFrame(frame, w, h);
             };
@@ -197,7 +200,7 @@ public sealed class RemoteForm : Form
             d.KeyframeNeeded += () => Ui(async () =>
             {
                 if (!ReferenceEquals(_decoder, d)) return;
-                Log?.Invoke("Bild hängt – fordere frischen Datenstrom an");
+                Log?.Invoke("Decoder braucht neuen Stromanfang – fordere an");
                 try { await _session.StartVideoAsync(_monitor); } catch { }
             });
             _decoder = d;

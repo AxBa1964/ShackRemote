@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace ShackRemote.UI;
 
 /// <summary>
-/// Zeigt das zuletzt dekodierte Bild mittig an (bereits auf Anzeigegröße skaliert, daher 1:1 gezeichnet).
+/// Zeigt das zuletzt dekodierte Bild mittig an; ist das Fenster größer als das Bild, wird es hier vergrößert.
 /// Bilder kommen aus dem Decoder-Thread; gezeichnet wird im UI-Thread.
 /// </summary>
 public sealed class VideoPanel : Control
@@ -75,16 +75,30 @@ public sealed class VideoPanel : Control
                 return;
             }
 
-            int x = (ClientSize.Width - _bitmap.Width) / 2;
-            int y = (ClientSize.Height - _bitmap.Height) / 2;
-            ImageBounds = new Rectangle(x, y, _bitmap.Width, _bitmap.Height);
+            // Seitenverhältnis erhalten; kleiner geliefert als Platz ist -> hier vergrößern.
+            double scale = Math.Min((double)ClientSize.Width / _bitmap.Width, (double)ClientSize.Height / _bitmap.Height);
+            int w = Math.Max(1, (int)(_bitmap.Width * scale));
+            int h = Math.Max(1, (int)(_bitmap.Height * scale));
+            int x = (ClientSize.Width - w) / 2;
+            int y = (ClientSize.Height - h) / 2;
+            ImageBounds = new Rectangle(x, y, w, h);
 
             using var black = new SolidBrush(Color.Black);
-            // Ränder schwarz füllen (Bild liegt mittig, Seitenverhältnis bleibt erhalten)
-            if (y > 0) { g.FillRectangle(black, 0, 0, ClientSize.Width, y); g.FillRectangle(black, 0, y + _bitmap.Height, ClientSize.Width, ClientSize.Height); }
-            if (x > 0) { g.FillRectangle(black, 0, 0, x, ClientSize.Height); g.FillRectangle(black, x + _bitmap.Width, 0, ClientSize.Width, ClientSize.Height); }
+            if (y > 0) { g.FillRectangle(black, 0, 0, ClientSize.Width, y); g.FillRectangle(black, 0, y + h, ClientSize.Width, ClientSize.Height); }
+            if (x > 0) { g.FillRectangle(black, 0, 0, x, ClientSize.Height); g.FillRectangle(black, x + w, 0, ClientSize.Width, ClientSize.Height); }
 
-            g.DrawImageUnscaled(_bitmap, x, y);
+            if (w == _bitmap.Width && h == _bitmap.Height)
+            {
+                g.DrawImageUnscaled(_bitmap, x, y);
+            }
+            else
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
+                g.DrawImage(_bitmap, ImageBounds);
+            }
             FramesShown++;
         }
     }
