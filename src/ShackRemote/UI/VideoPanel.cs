@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using ShackRemote.Core.Media;
 
 namespace ShackRemote.UI;
@@ -8,6 +9,8 @@ namespace ShackRemote.UI;
 /// </summary>
 public sealed class VideoPanel : Control
 {
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public VideoRenderer? Renderer { get; set; }
 
     public VideoPanel()
