@@ -66,15 +66,48 @@ public sealed class FsEntry
 /// <summary>Gemeinsame Dateioperationen (Server für den Shack-PC, Client für die linke Seite).</summary>
 public static class FsOps
 {
-    public static List<FsEntry> Drives() =>
-        DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => new FsEntry
+    /// <summary>
+    /// Laufwerke parallel abfragen, jedes höchstens 1,5 s: getrennte Netzlaufwerke oder leere Kartenleser
+    /// können bei der Abfrage sonst viele Sekunden hängen.
+    /// </summary>
+    public static List<FsEntry> Drives()
+    {
+        var drives = DriveInfo.GetDrives();
+        var tasks = drives.Select(d => Task.Run(() => Describe(d))).ToArray();
+        var result = new List<FsEntry>();
+        for (int i = 0; i < drives.Length; i++)
         {
-            Name = d.Name,
-            Dir = true,
-            Size = d.TotalFreeSpace,
-            Info = $"{(string.IsNullOrEmpty(d.VolumeLabel) ? "" : d.VolumeLabel + " – ")}{DriveKind(d.DriveType)}, " +
-                   $"{d.TotalFreeSpace / 1_000_000_000.0:F0} von {d.TotalSize / 1_000_000_000.0:F0} GB frei",
-        }).ToList();
+            if (tasks[i].Wait(1500))
+            {
+                if (tasks[i].Result is { } e) result.Add(e);
+            }
+            else if (drives[i].DriveType == DriveType.Network)
+            {
+                result.Add(new FsEntry { Name = drives[i].Name, Dir = true, Info = "Netzlaufwerk – antwortet nicht" });
+            }
+        }
+        return result;
+    }
+
+    private static FsEntry? Describe(DriveInfo d)
+    {
+        try
+        {
+            if (!d.IsReady) return null;
+            return new FsEntry
+            {
+                Name = d.Name,
+                Dir = true,
+                Size = d.TotalFreeSpace,
+                Info = $"{(string.IsNullOrEmpty(d.VolumeLabel) ? "" : d.VolumeLabel + " – ")}{DriveKind(d.DriveType)}, " +
+                       $"{d.TotalFreeSpace / 1_000_000_000.0:F0} von {d.TotalSize / 1_000_000_000.0:F0} GB frei",
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static string DriveKind(DriveType t) => t switch
     {

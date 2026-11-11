@@ -26,48 +26,66 @@ public sealed class FileForm : Form
         MinimumSize = new Size(800, 480);
         KeyPreview = true;
 
-        _local = new FilePane(new LocalSide(), $"Laptop ({Environment.MachineName})");
-        _remote = new FilePane(new RemoteSide(remoteFs), $"Shack-PC ({session.ServerName})");
+        BackColor = Theme.Surface;
+        _local = new FilePane(new LocalSide(), "Dieser PC", Environment.MachineName);
+        _remote = new FilePane(new RemoteSide(remoteFs), "Shack-PC", session.ServerName);
+        _local.PathChanged += path => AppSettings.Update(st => st.FileLocalPath = path);
+        _remote.PathChanged += path => AppSettings.Update(st => st.FileRemotePath = path);
         _active = _local;
         foreach (var p in new[] { _local, _remote })
         {
             p.PaneActivated += () => _active = p;
             p.ItemsDropped += OnDrop;
-            p.Log += msg => SetStatus(msg);
+            p.Log += msg => ShowLog(msg);
         }
 
-        // --- Knöpfe ------------------------------------------------------------------------
-        Button B(string text, string tip, Func<Task> action)
+        // --- Werkzeugleiste ------------------------------------------------------------------
+        Button B(char glyph, string text, string tip, Func<Task> action, bool primary = false)
         {
-            var b = LayoutKit.MakeButton(text);
+            var b = Theme.ToolButton(this, glyph, text, tip, primary);
             b.Click += async (_, _) => await action();
-            new ToolTip().SetToolTip(b, tip);
             _actionButtons.Add(b);
             return b;
         }
-        var bar = LayoutKit.Row(
-            B("Kopieren →  (F5)", "Markierte Einträge auf die andere Seite kopieren", () => TransferAsync(move: false)),
-            B("Verschieben → (F6)", "Markierte Einträge auf die andere Seite verschieben", () => TransferAsync(move: true)),
-            B("Neuer Ordner (F7)", "Ordner auf der aktiven Seite anlegen", NewFolderAsync),
-            B("Umbenennen (F2)", "Markierten Eintrag umbenennen", RenameAsync),
-            B("Löschen (Entf)", "Markierte Einträge endgültig löschen", DeleteAsync),
-            B("Aktualisieren", "Beide Seiten neu einlesen", async () => { await _local.RefreshAsync(); await _remote.RefreshAsync(); }));
+        var bar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = false,
+            BackColor = Theme.Surface,
+            Padding = new Padding(8, 4, 8, 4),
+        };
+        bar.Controls.AddRange(new Control[]
+        {
+            B(Theme.Copy, "Kopieren", "Markierte Einträge auf die andere Seite kopieren (F5)", () => TransferAsync(move: false), primary: true),
+            B(Theme.Move, "Verschieben", "Markierte Einträge auf die andere Seite verschieben (F6)", () => TransferAsync(move: true)),
+            B(Theme.NewFolder, "Neuer Ordner", "Ordner auf der aktiven Seite anlegen (F7)", NewFolderAsync),
+            B(Theme.Rename, "Umbenennen", "Markierten Eintrag umbenennen (F2)", RenameAsync),
+            B(Theme.Delete, "Löschen", "Markierte Einträge endgültig löschen (Entf)", DeleteAsync),
+            B(Theme.Refresh, "Aktualisieren", "Beide Seiten neu einlesen", async () => await Task.WhenAll(_local.RefreshAsync(), _remote.RefreshAsync())),
+        });
 
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical };
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            SplitterWidth = 6,
+            BackColor = Theme.Surface,
+        };
         split.Panel1.Controls.Add(_local);
         split.Panel2.Controls.Add(_remote);
         _local.Dock = DockStyle.Fill;
         _remote.Dock = DockStyle.Fill;
 
-        _status = LayoutKit.MakeLabel("Bereit.");
+        _status = new Label { Text = "Bereit.", ForeColor = Theme.SubtleText };
         _status.AutoSize = false;
         _status.Dock = DockStyle.Fill;
         _status.TextAlign = ContentAlignment.MiddleLeft;
         _progress = new ProgressBar { Width = 260, Height = 20, Margin = new Padding(6, 6, 6, 3), Visible = false };
-        _cancel = LayoutKit.MakeButton("Abbrechen");
+        _cancel = Theme.ToolButton(this, Theme.Cancel, "Abbrechen");
         _cancel.Visible = false;
         _cancel.Click += (_, _) => _cts?.Cancel();
-        var statusRow = new TableLayoutPanel { Dock = DockStyle.Bottom, ColumnCount = 3, AutoSize = true, Padding = new Padding(4) };
+        var statusRow = new TableLayoutPanel { Dock = DockStyle.Bottom, ColumnCount = 3, AutoSize = true, Padding = new Padding(12, 2, 8, 4), BackColor = Theme.Surface };
         statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -75,7 +93,6 @@ public sealed class FileForm : Form
         statusRow.Controls.Add(_progress, 1, 0);
         statusRow.Controls.Add(_cancel, 2, 0);
 
-        bar.Dock = DockStyle.Top;
         Controls.Add(split);
         Controls.Add(bar);
         Controls.Add(statusRow);
@@ -84,8 +101,10 @@ public sealed class FileForm : Form
         Shown += async (_, _) =>
         {
             split.SplitterDistance = split.Width / 2;
-            await _local.ShowDrivesAsync();
-            await _remote.ShowDrivesAsync();
+            // Beide Seiten gleichzeitig laden, jeweils mit dem zuletzt geöffneten Ordner
+            await Task.WhenAll(
+                _local.ShowDrivesAsync(AppSettings.Read(st => st.FileLocalPath)),
+                _remote.ShowDrivesAsync(AppSettings.Read(st => st.FileRemotePath)));
             _local.FocusList();
         };
 
@@ -110,8 +129,8 @@ public sealed class FileForm : Form
         FormClosing += (_, e) =>
         {
             if (_cts is null) return;
-            if (MessageBox.Show(this, "Eine Übertragung läuft noch. Abbrechen und schließen?", "ShackRemote",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            if (ModernDialog.Show(this, "Übertragung läuft", "Eine Übertragung läuft noch. Abbrechen und das Fenster schließen?",
+                    ("Abbrechen und schließen", DialogResult.Yes, true), ("Weiter übertragen", DialogResult.No, false)) == DialogResult.Yes)
                 _cts.Cancel();
             else
                 e.Cancel = true;
@@ -119,6 +138,17 @@ public sealed class FileForm : Form
     }
 
     private FilePane Other(FilePane p) => p == _local ? _remote : _local;
+
+    // Meldungen beider Seiten (z. B. Ladezeiten) – die letzten zwei bleiben sichtbar
+    private readonly Queue<string> _recent = new();
+
+    private void ShowLog(string text)
+    {
+        if (InvokeRequired) { BeginInvoke(() => ShowLog(text)); return; }
+        _recent.Enqueue(text);
+        while (_recent.Count > 2) _recent.Dequeue();
+        SetStatus(string.Join("      ", _recent));
+    }
 
     private void SetStatus(string text)
     {
@@ -133,7 +163,7 @@ public sealed class FileForm : Form
     {
         var pane = _active;
         if (pane.CurrentPath.Length == 0) { SetStatus("Erst ein Laufwerk öffnen."); return; }
-        var name = InputDialog.Ask(this, "Neuer Ordner", "Name des neuen Ordners:", "Neuer Ordner");
+        var name = ModernDialog.Ask(this, "Neuer Ordner", $"Name des neuen Ordners in „{pane.CurrentPath}“:", "Neuer Ordner");
         if (string.IsNullOrWhiteSpace(name)) return;
         await RunAsync($"Lege Ordner „{name}“ an …", async _ =>
         {
@@ -147,7 +177,7 @@ public sealed class FileForm : Form
         var pane = _active;
         var entry = pane.SelectedEntries.FirstOrDefault();
         if (entry is null || pane.CurrentPath.Length == 0) return;
-        var name = InputDialog.Ask(this, "Umbenennen", $"Neuer Name für „{entry.Name}“:", entry.Name);
+        var name = ModernDialog.Ask(this, "Umbenennen", $"Neuer Name für „{entry.Name}“:", entry.Name);
         if (string.IsNullOrWhiteSpace(name) || name == entry.Name) return;
         await RunAsync($"Benenne um …", async _ =>
         {
@@ -162,8 +192,9 @@ public sealed class FileForm : Form
         var entries = pane.SelectedEntries;
         if (entries.Count == 0 || pane.CurrentPath.Length == 0) return;
         var what = entries.Count == 1 ? $"„{entries[0].Name}“" : $"{entries.Count} Einträge";
-        if (MessageBox.Show(this, $"{what} auf „{pane.Title}“ ENDGÜLTIG löschen (ohne Papierkorb)?\nOrdner werden samt Inhalt gelöscht.",
-                "Löschen", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        if (ModernDialog.Show(this, "Löschen",
+                $"{what} auf „{pane.Title}“ endgültig löschen?\n\nEs gibt keinen Papierkorb. Ordner werden samt Inhalt gelöscht.",
+                ("Löschen", DialogResult.Yes, false), ("Abbrechen", DialogResult.Cancel, true)) != DialogResult.Yes)
             return;
         await RunAsync($"Lösche {what} …", async ct =>
         {
@@ -296,28 +327,11 @@ public sealed class FileForm : Form
     /// <summary>Aus dem Arbeits-Thread: Rückfrage im UI-Thread.
     /// Ja = diese überschreiben, Wiederholen = alle überschreiben, Nein = überspringen, Abbrechen = alles abbrechen.</summary>
     private DialogResult AskOverwrite(string path) => (DialogResult)Invoke(new Func<DialogResult>(() =>
-    {
-        using var dlg = new Form
-        {
-            Text = "Datei existiert",
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            StartPosition = FormStartPosition.CenterParent,
-            MinimizeBox = false, MaximizeBox = false,
-            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Font = Font,
-        };
-        var label = LayoutKit.MakeLabel($"„{path}“ existiert bereits. Überschreiben?");
-        label.MaximumSize = new Size(560, 0);
-        Button Btn(string t, DialogResult r) { var b = LayoutKit.MakeButton(t); b.DialogResult = r; return b; }
-        var row = LayoutKit.Row(Btn("Ja", DialogResult.Yes), Btn("Ja, alle", DialogResult.Retry), Btn("Nein", DialogResult.No), Btn("Abbrechen", DialogResult.Cancel));
-        var col = LayoutKit.Column(2);
-        col.Dock = DockStyle.None;
-        col.AutoSize = true;
-        col.Controls.Add(label, 0, 0);
-        col.Controls.Add(row, 0, 1);
-        dlg.Controls.Add(col);
-        return dlg.ShowDialog(this);
-    }));
+        ModernDialog.Show(this, "Datei existiert bereits", $"„{path}“ gibt es schon. Überschreiben?",
+            ("Überschreiben", DialogResult.Yes, true),
+            ("Alle überschreiben", DialogResult.Retry, false),
+            ("Überspringen", DialogResult.No, false),
+            ("Abbrechen", DialogResult.Cancel, false))));
 
     // ---- Ziehen und Ablegen -------------------------------------------------------------------
 
@@ -373,7 +387,7 @@ public sealed class FileForm : Form
         catch (Exception ex)
         {
             SetStatus($"Fehler: {ex.Message}");
-            MessageBox.Show(this, ex.Message, "ShackRemote – Dateien", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ModernDialog.Show(this, "Fehler", ex.Message, ("OK", DialogResult.OK, true));
         }
         finally
         {

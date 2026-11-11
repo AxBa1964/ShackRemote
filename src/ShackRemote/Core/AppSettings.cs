@@ -20,6 +20,10 @@ public sealed class AppSettings
     /// <summary>Client: gewählte Tonquelle beim Server (Geräte-Id, "" = Standard-Wiedergabe, null = Ton aus).</summary>
     public string? AudioSource { get; set; } = "";
 
+    /// <summary>Client: zuletzt geöffnete Ordner im Dateifenster.</summary>
+    public string? FileLocalPath { get; set; }
+    public string? FileRemotePath { get; set; }
+
     /// <summary>Client: bekannte (gekoppelte) Server.</summary>
     public List<KnownServer> KnownServers { get; set; } = new();
 
