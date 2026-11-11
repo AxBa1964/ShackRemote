@@ -28,5 +28,6 @@ Beide Windows 11. Technik: C# / .NET 10, veröffentlicht als Self-contained Sing
 | 1a | Gerüst: Rollenwahl, Adresserkennung, Server-Suche, TLS, Pairing | **erledigt** (11.11.2026, Laptop ↔ Shack-PC über WLAN, Ping ca. 10 ms) – siehe [`src/README.md`](src/README.md) |
 | 1b | Bild: DXGI-Aufnahme, H.264 per Quick Sync, Anzeige im Client | **läuft** (11.11.2026, 0.3.0 GPU-Pipeline im Prozess): Bild gut lesbar, Monitorwechsel klappt, kaum Verzögerung. Offen: Server liefert erst 32–50 statt 60 fps |
 | 1c | Bedienung und Ton: Maus, Tastatur, Monitorleiste 1/2/3, WASAPI/Opus | Maus/Tastatur **erledigt** (11.11.2026, 0.4.0: Position, Klicks, Rad, Sondertasten, Umlaute getestet); Ton offen |
+| 1d | Dienstbetrieb: Sperr-/Anmeldebildschirm, Strg+Alt+Entf, Sperren, Start mit Windows | **erledigt** (11.11.2026, 0.5.x) |
 | 2 | Zugriff von unterwegs über Tailscale | offen |
 | 3 | optional: Windows-Dienst (Anmeldebildschirm/UAC), Zwischenablage, Dateien | offen |

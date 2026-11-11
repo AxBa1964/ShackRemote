@@ -87,7 +87,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
             {
                 // Wechsel normaler Desktop <-> Sperr-/Anmeldebildschirm: Aufnahme neu aufbauen lassen
                 // (meldet DXGI nicht immer selbst als Fehler).
-                if (desktopCheck.ElapsedMilliseconds >= 1000)
+                if (desktopCheck.ElapsedMilliseconds >= 250)
                 {
                     desktopCheck.Restart();
                     if (!Desktop.ThreadIsOnInputDesktop())

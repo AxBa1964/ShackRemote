@@ -314,14 +314,15 @@ public sealed class SessionServer : IDisposable
             // Nicht bei jedem Versuch protokollieren: erste Meldung, neue Meldung, dann alle 30 Versuche (~1 min)
             if (message != _lastError || failures % 30 == 1)
             {
-                _log($"Video unterbrochen: {message} – neuer Versuch alle 2 s (Sperrbildschirm/Monitor-Standby?)");
+                _log($"Video unterbrochen: {message} – wird neu aufgebaut");
                 _ = _conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = $"{message} – wird neu versucht" });
             }
             _lastError = message;
 
             _ = Task.Run(async () =>
             {
-                await Task.Delay(2000);
+                // Erste Versuche schnell (Desktopwechsel nach Anmeldung/Sperren), danach alle 2 s
+                await Task.Delay(failures <= 3 ? 300 : 2000);
                 lock (_gate)
                 {
                     if (!ReferenceEquals(_encoder, encoder)) return;   // inzwischen gestoppt oder anderer Monitor
