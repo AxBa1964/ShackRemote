@@ -9,12 +9,15 @@ namespace ShackRemote.UI;
 /// </summary>
 internal static class LayoutKit
 {
+    private static Icon? AppIcon;   // Programmsymbol aus der exe (Titelleiste/Taskleiste)
+
     /// <summary>Muss im Konstruktor VOR dem Hinzufügen der Steuerelemente aufgerufen werden.</summary>
     public static void PrepareForm(Form form, string title)
     {
         form.SuspendLayout();
         form.AutoScaleDimensions = new SizeF(96F, 96F);
         form.AutoScaleMode = AutoScaleMode.Dpi;
+        try { form.Icon = AppIcon ??= Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
         form.Font = new Font("Segoe UI", 10F);
         form.Text = title;
         form.StartPosition = FormStartPosition.CenterScreen;

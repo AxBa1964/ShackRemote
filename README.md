@@ -29,5 +29,24 @@ Beide Windows 11. Technik: C# / .NET 10, veröffentlicht als Self-contained Sing
 | 1b | Bild: DXGI-Aufnahme, H.264 per Quick Sync, Anzeige im Client | **läuft** (11.11.2026, 0.3.0 GPU-Pipeline im Prozess): Bild gut lesbar, Monitorwechsel klappt, kaum Verzögerung. Offen: Server liefert erst 32–50 statt 60 fps |
 | 1c | Bedienung und Ton: Maus, Tastatur, Monitorleiste 1/2/3, WASAPI/Opus | **erledigt** (11.11.2026): Maus/Tastatur 0.4.0, Ton 0.7.0 (Opus, Quelle wählbar) |
 | 1d | Dienstbetrieb: Sperr-/Anmeldebildschirm, Strg+Alt+Entf, Sperren, Start mit Windows | **erledigt** (11.11.2026, 0.5.x) |
+| 1e | Setup (Inno Setup): Startmenü/Desktop-Symbol, Dienst und Firewall per Haken | **neu** (11.11.2026, 1.0.0) |
 | 2 | Zugriff von unterwegs über Tailscale | offen |
 | 3 | optional: Windows-Dienst (Anmeldebildschirm/UAC), Zwischenablage, Dateien | offen |
+
+## Setup bauen und installieren
+
+Einmalig: Inno Setup 7 installieren (kostenlos, https://jrsoftware.org/isdl.php) und `tools\get-ffmpeg.cmd` ausführen.
+
+```
+cd C:\ABDevelop\ShackRemote
+setup.cmd
+```
+
+Ergebnis: `publish\setup\ShackRemote-Setup-<Version>.exe` – eine Datei, läuft ohne installiertes .NET.
+
+- **Shack-PC:** beim Setup den Haken „Dieser PC ist der Shack-PC …“ setzen. Dann wird der Dienst eingerichtet
+  (startet mit Windows, auch am Anmeldebildschirm) und die Windows-Firewall für ShackRemote freigegeben (Profil Privat/Domäne).
+- **Laptop:** Haken weglassen; es gibt nur das Symbol im Startmenü bzw. auf dem Desktop.
+- **Update:** neues Setup einfach darüber installieren; ein vorhandener Dienst wird angehalten, aktualisiert und neu gestartet.
+- **Deinstallieren:** über Windows-Einstellungen → Apps; Dienst und Firewall-Regel werden entfernt.
+  Kopplungen und Einstellungen (`C:\ProgramData\ShackRemote`, `%APPDATA%\ShackRemote`) bleiben liegen.

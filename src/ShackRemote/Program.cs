@@ -16,6 +16,7 @@ internal static class Program
     ///   /agent                - Server-Agent als SYSTEM in der Benutzersitzung (startet der Dienst)
     ///   /dienst-installieren  - Dienst einrichten (braucht Adminrechte; Knopf im Server-Fenster)
     ///   /dienst-entfernen     - Dienst entfernen (braucht Adminrechte; Knopf im Server-Fenster)
+    ///   /still                - zusammen mit den beiden oberen: ohne Erfolgsmeldung (für das Setup)
     ///   /encoder=X            - Test: Encoder erzwingen (qsv, nvenc, amf, cpu), ohne Rückfall
     /// </summary>
     [STAThread]
@@ -37,13 +38,15 @@ internal static class Program
             try
             {
                 var result = install ? ServiceSetup.Install() : ServiceSetup.Uninstall();
-                MessageBox.Show(result, install ? "ShackRemote – Dienst eingerichtet" : "ShackRemote – Dienst entfernt",
+                if (!Has("/still"))   // /still: aus dem Setup heraus, ohne Meldung
+                    MessageBox.Show(result, install ? "ShackRemote – Dienst eingerichtet" : "ShackRemote – Dienst entfernt",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return 0;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "ShackRemote – Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!Has("/still") || install)
+                    MessageBox.Show(ex.Message, "ShackRemote – Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
