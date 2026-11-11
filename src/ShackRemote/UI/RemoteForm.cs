@@ -106,14 +106,16 @@ public sealed class RemoteForm : Form
             "Tonquelle beim Shack-PC: 🔊 = was dort abgespielt wird, 🎙 = Aufnahmegerät (z. B. USB-Soundkarte des Funkgeräts)");
         toolbar.Controls.Add(_audioSource);
 
-        _info = LayoutKit.MakeLabel("");
-        _info.Margin = new Padding(12, 9, 3, 3);
-        toolbar.Controls.Add(_info);
+        // Messwerte in eigener Statuszeile unten (in der Leiste wurden sie abgeschnitten)
+        _info = new Label { Dock = DockStyle.Fill, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.SubtleText };
+        var statusBar = new Panel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(26), Padding = new Padding(10, 0, 10, 0), BackColor = Theme.Surface };
+        statusBar.Controls.Add(_info);
 
         _video = new VideoPanel { Dock = DockStyle.Fill };
 
         Controls.Add(_video);
         Controls.Add(toolbar);
+        Controls.Add(statusBar);
         ResumeLayout(true);
 
         // --- Ereignisse ----------------------------------------------------------------

@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ShackRemote</AssemblyName>
     <RootNamespace>ShackRemote</RootNamespace>
-    <Version>0.9.0</Version>
+    <Version>0.9.1</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- Dunkler Modus von WinForms (Application.SetColorMode) ist in .NET 10 noch als experimentell markiert -->
     <NoWarn>$(NoWarn);WFO5001</NoWarn>
@@ -23,6 +23,11 @@
     <!-- Ton: WASAPI-Aufnahme (Loopback/Aufnahmegerät) und -Wiedergabe; bewusst die bewährte 2.2.1 (3.x hat neue Schnittstellen) -->
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Startbild (optional): Assets\intro.png wird in die Exe eingebettet -->
+    <EmbeddedResource Include="Assets\intro.png" Condition="Exists('Assets\intro.png')" LogicalName="ShackRemote.Assets.intro.png" />
   </ItemGroup>
 
   <ItemGroup>
