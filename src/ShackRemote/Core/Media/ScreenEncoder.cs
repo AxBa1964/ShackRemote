@@ -69,6 +69,12 @@ public sealed unsafe class ScreenEncoder : IDisposable
     {
         try
         {
+            // Im Dienstbetrieb (SYSTEM) auch den Sperr-/Anmeldebildschirm aufnehmen: Thread an den Eingabe-Desktop binden.
+            var desktop = Desktop.AttachToInputDesktop() ?? Desktop.ThreadDesktopName();
+            if (!Desktop.ThreadIsOnInputDesktop())
+                throw new InvalidOperationException(
+                    $"Anzeige nicht zugänglich (\"{Desktop.InputDesktopName() ?? "gesperrt"}\") – ohne Dienst kein Sperrbildschirm");
+            Log?.Invoke($"Video: Desktop \"{desktop}\"" + (Desktop.IsSystem ? " (Dienstbetrieb)" : ""));
             Open();
             _encodeThread = new Thread(EncodeLoop) { IsBackground = true, Name = $"Encoder Ausgang {_output}", Priority = ThreadPriority.AboveNormal };
             _encodeThread.Start();
@@ -76,8 +82,19 @@ public sealed unsafe class ScreenEncoder : IDisposable
             _sendThread.Start();
 
             var report = Stopwatch.StartNew();
+            var desktopCheck = Stopwatch.StartNew();
             while (!_stop)
             {
+                // Wechsel normaler Desktop <-> Sperr-/Anmeldebildschirm: Aufnahme neu aufbauen lassen
+                // (meldet DXGI nicht immer selbst als Fehler).
+                if (desktopCheck.ElapsedMilliseconds >= 1000)
+                {
+                    desktopCheck.Restart();
+                    if (!Desktop.ThreadIsOnInputDesktop())
+                        throw new InvalidOperationException(
+                            $"Anzeige gewechselt (jetzt \"{Desktop.InputDesktopName() ?? "gesperrt"}\")");
+                }
+
                 var frame = ffmpeg.av_frame_alloc();
                 int ret = ffmpeg.av_buffersink_get_frame(_sink, frame);
                 if (ret < 0)

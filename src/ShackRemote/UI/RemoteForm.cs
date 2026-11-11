@@ -72,6 +72,16 @@ public sealed class RemoteForm : Form
             toolbar.Controls.Add(b);
         }
 
+        var sas = LayoutKit.MakeButton("Strg+Alt+Entf");
+        sas.Margin = new Padding(18, 3, 3, 3);
+        sas.Click += async (_, _) => await CommandAsync("SendSas");
+        tips.SetToolTip(sas, "Strg+Alt+Entf auf dem Shack-PC (z. B. zum Entsperren). Braucht den Dienst auf dem Shack-PC.");
+        var lockButton = LayoutKit.MakeButton("Sperren");
+        lockButton.Click += async (_, _) => await CommandAsync("Lock");
+        tips.SetToolTip(lockButton, "Shack-PC sperren (Win+L wirkt immer nur auf den Laptop).");
+        toolbar.Controls.Add(sas);
+        toolbar.Controls.Add(lockButton);
+
         _info = LayoutKit.MakeLabel("");
         _info.Margin = new Padding(12, 9, 3, 3);
         toolbar.Controls.Add(_info);
@@ -87,6 +97,7 @@ public sealed class RemoteForm : Form
         _session.VideoInfo += OnVideoInfo;
         _session.VideoError += OnVideoError;
         _session.RoundTripMeasured += OnRtt;
+        _session.Info += OnInfo;
 
         _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); _renderer?.Resize(_video.ClientSize.Width, _video.ClientSize.Height); };
         _video.Resize += (_, _) => { _resizeTimer.Stop(); _resizeTimer.Start(); };
@@ -129,6 +140,7 @@ public sealed class RemoteForm : Form
             _session.VideoInfo -= OnVideoInfo;
             _session.VideoError -= OnVideoError;
             _session.RoundTripMeasured -= OnRtt;
+            _session.Info -= OnInfo;
             var r = _renderer;
             _renderer = null;
             _video.Renderer = null;
@@ -193,6 +205,15 @@ public sealed class RemoteForm : Form
     });
 
     private void OnRtt(double ms) => _lastRtt = ms;
+
+    private void OnInfo(string text) => Ui(() => Log?.Invoke($"Shack-PC: {text}"));
+
+    private async Task CommandAsync(string type)
+    {
+        try { await _session.SendCommandAsync(type); }
+        catch (Exception ex) { Log?.Invoke($"Befehl {type} fehlgeschlagen: {ex.Message}"); }
+        _video.Focus();
+    }
 
     private void UpdateStats()
     {

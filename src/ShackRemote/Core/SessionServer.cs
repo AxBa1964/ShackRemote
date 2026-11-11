@@ -3,6 +3,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using ShackRemote.Core.Media;
+using ShackRemote.Core.Service;
 
 namespace ShackRemote.Core;
 
@@ -178,6 +179,16 @@ public sealed class SessionServer : IDisposable
                                 video.Start(Math.Clamp(m.Monitor, 0, 15));
                                 shown = monitors?.FirstOrDefault(mo => mo.Index == m.Monitor);
                                 break;
+                            case "SendSas":
+                            case "Lock":
+                            {
+                                string result;
+                                try { result = m.Type == "SendSas" ? SystemActions.SendCtrlAltDel() : SystemActions.Lock(); }
+                                catch (Exception ex) { result = $"{m.Type} fehlgeschlagen: {ex.Message}"; }
+                                Log?.Invoke(result);
+                                await conn.SendControlAsync(new ControlMessage { Type = "Info", Text = result }, ct);
+                                break;
+                            }
                             case "RequestKeyframe":
                                 video.RequestKeyframe();
                                 break;

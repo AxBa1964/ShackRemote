@@ -20,8 +20,22 @@ public sealed class AppSettings
     /// <summary>Client: bekannte (gekoppelte) Server.</summary>
     public List<KnownServer> KnownServers { get; set; } = new();
 
-    public static string Folder { get; } =
+    /// <summary>
+    /// Normal %APPDATA%\ShackRemote. Im Dienstbetrieb (Agent als SYSTEM) C:\ProgramData\ShackRemote,
+    /// siehe <see cref="UseMachineFolder"/>.
+    /// </summary>
+    public static string Folder { get; private set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShackRemote");
+
+    /// <summary>Auf den rechnerweiten Datenordner umschalten (vor dem Laden des Zertifikats aufrufen).</summary>
+    public static void UseMachineFolder(string folder)
+    {
+        lock (Gate)
+        {
+            Folder = folder;
+            Current = Load();
+        }
+    }
 
     private static string FilePath => Path.Combine(Folder, "settings.json");
     private static readonly object Gate = new();

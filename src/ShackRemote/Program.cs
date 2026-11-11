@@ -1,4 +1,6 @@
+using System.ServiceProcess;
 using ShackRemote.Core;
+using ShackRemote.Core.Service;
 using ShackRemote.UI;
 
 namespace ShackRemote;
@@ -7,18 +9,49 @@ internal static class Program
 {
     /// <summary>
     /// Startparameter:
-    ///   /server  - direkt als Server starten (Shack-PC)
-    ///   /client  - direkt als Client starten (Laptop)
-    ///   /rolle   - Rollenauswahl erzwingen, auch wenn "nicht mehr fragen" gesetzt ist
+    ///   /server               - direkt als Server starten (Shack-PC)
+    ///   /client               - direkt als Client starten (Laptop)
+    ///   /rolle                - Rollenauswahl erzwingen, auch wenn "nicht mehr fragen" gesetzt ist
+    ///   /dienst               - läuft als Windows-Dienst (wird von Windows so gestartet, nicht von Hand)
+    ///   /agent                - Server-Agent als SYSTEM in der Benutzersitzung (startet der Dienst)
+    ///   /dienst-installieren  - Dienst einrichten (braucht Adminrechte; Knopf im Server-Fenster)
+    ///   /dienst-entfernen     - Dienst entfernen (braucht Adminrechte; Knopf im Server-Fenster)
     /// </summary>
     [STAThread]
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
-
         bool Has(string a) => args.Any(x => x.Equals(a, StringComparison.OrdinalIgnoreCase));
 
-        string? role = Has("/server") ? "server"
+        if (Has("/dienst"))
+        {
+            ServiceBase.Run(new ShackService());
+            return 0;
+        }
+
+        ApplicationConfiguration.Initialize();
+
+        if (Has("/dienst-installieren") || Has("/dienst-entfernen"))
+        {
+            bool install = Has("/dienst-installieren");
+            try
+            {
+                var result = install ? ServiceSetup.Install() : ServiceSetup.Uninstall();
+                MessageBox.Show(result, install ? "ShackRemote – Dienst eingerichtet" : "ShackRemote – Dienst entfernt",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "ShackRemote – Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 1;
+            }
+        }
+
+        bool agent = Has("/agent");
+        if (agent)
+            AppSettings.UseMachineFolder(ServiceSetup.DataFolder);
+
+        string? role = agent || Has("/server") ? "server"
                      : Has("/client") ? "client"
                      : (!Has("/rolle") && AppSettings.Read(s => s.RememberRole)) ? AppSettings.Read(s => s.Role)
                      : null;
@@ -27,7 +60,7 @@ internal static class Program
         {
             using var dlg = new RoleForm();
             if (dlg.ShowDialog() != DialogResult.OK || dlg.Role is null)
-                return;
+                return 0;
             role = dlg.Role;
             var remember = dlg.Remember;
             AppSettings.Update(s => { s.Role = role; s.RememberRole = remember; });
@@ -40,12 +73,17 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Das Zertifikat konnte nicht geladen oder erzeugt werden:\n\n{ex.Message}",
+            if (agent) FileLog.Write("agent", $"Zertifikat: {ex.Message}");
+            else MessageBox.Show($"Das Zertifikat konnte nicht geladen oder erzeugt werden:\n\n{ex.Message}",
                 "ShackRemote", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            return 1;
         }
 
-        Form main = role == "server" ? new ServerForm(cert) : new ClientForm(cert);
+        var mode = agent ? ServerMode.Agent
+                 : role == "server" && ServiceSetup.IsRunning ? ServerMode.Management
+                 : ServerMode.Normal;
+        Form main = role == "server" ? new ServerForm(cert, mode) : new ClientForm(cert);
         Application.Run(main);
+        return 0;
     }
 }

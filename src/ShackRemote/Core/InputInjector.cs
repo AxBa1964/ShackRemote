@@ -24,8 +24,42 @@ public static class InputInjector
 
     private const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
 
-    /// <summary>Wendet eine Eingabe-Nachricht an. monitor = der Bildschirm, den der Client gerade sieht.</summary>
-    public static void Apply(ReadOnlySpan<byte> msg, MonitorInfo? monitor)
+    // Eigener Thread: Er kann (im Dienstbetrieb) an den jeweils aktiven Desktop gebunden werden,
+    // damit Eingaben auch auf dem Sperr-/Anmeldebildschirm ankommen.
+    private static readonly System.Collections.Concurrent.BlockingCollection<Action> Queue = new();
+    private static readonly Lazy<Thread> Worker = new(() =>
+    {
+        var t = new Thread(() =>
+        {
+            foreach (var action in Queue.GetConsumingEnumerable())
+            {
+                try
+                {
+                    if (!Desktop.ThreadIsOnInputDesktop()) Desktop.AttachToInputDesktop();
+                    action();
+                }
+                catch { /* einzelne Eingabe verloren – nicht weiter schlimm */ }
+            }
+        }) { IsBackground = true, Name = "Eingabe" };
+        t.Start();
+        return t;
+    });
+
+    /// <summary>Eingabe-Nachricht einreihen. monitor = der Bildschirm, den der Client gerade sieht.</summary>
+    public static void Apply(byte[] msg, MonitorInfo? monitor)
+    {
+        _ = Worker.Value;
+        Queue.Add(() => ApplyNow(msg, monitor));
+    }
+
+    /// <summary>Beim Verbindungsende: alle noch gedrückten Tasten und Maustasten loslassen (sonst "klemmt" z. B. Strg).</summary>
+    public static void ReleaseAll()
+    {
+        _ = Worker.Value;
+        Queue.Add(ReleaseAllNow);
+    }
+
+    private static void ApplyNow(ReadOnlySpan<byte> msg, MonitorInfo? monitor)
     {
         if (msg.Length == 0) return;
         switch (msg[0])
@@ -76,8 +110,7 @@ public static class InputInjector
         }
     }
 
-    /// <summary>Beim Verbindungsende: alle noch gedrückten Tasten und Maustasten loslassen (sonst "klemmt" z. B. Strg).</summary>
-    public static void ReleaseAll()
+    private static void ReleaseAllNow()
     {
         List<(ushort Vk, ushort Scan, bool Ext)> keys;
         lock (KeysDown) { keys = KeysDown.ToList(); KeysDown.Clear(); }

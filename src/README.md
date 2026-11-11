@@ -1,5 +1,29 @@
 # ShackRemote – Quellcode
 
+## Dienstbetrieb (Stand 0.5.0)
+
+Wie AnyDesk/RustDesk/Sunshine: Ein Windows-Dienst sorgt für Sperrbildschirm, Anmeldung und Strg+Alt+Entf.
+
+- **Einrichten:** Server-Fenster → Knopf **„Dienst einrichten“** (Windows fragt nach Adminrechten). Das Programm
+  kopiert sich nach `C:\Program Files\ShackRemote`, übernimmt Zertifikat und Kopplungen nach
+  `C:\ProgramData\ShackRemote` (nur SYSTEM/Administratoren), setzt die Richtlinie `SoftwareSASGeneration`
+  (Strg+Alt+Entf durch Dienste) und legt den Dienst **ShackRemote** an (Autostart, Neustart bei Absturz).
+- **Ablauf:** Dienst (SYSTEM) → startet in der Konsolensitzung `ShackRemote.exe /agent` als SYSTEM → der Agent ist der
+  eigentliche Server. Aufnahme- und Eingabe-Thread hängen sich jeweils an den aktiven Desktop
+  (normal „Default“, Sperr-/Anmeldebildschirm „Winlogon“).
+- **Client-Leiste:** Knöpfe **Strg+Alt+Entf** und **Sperren** (Win+L und Strg+Alt+Entf lassen sich am Laptop nicht abfangen).
+- **Verwaltung:** Läuft der Dienst, ist ein von Hand gestartetes Server-Fenster nur noch Verwaltung (kein zweiter Server).
+- **Protokolle:** `C:\ProgramData\ShackRemote\dienst.log` und `agent.log`.
+- **Entfernen:** Knopf „Dienst entfernen“. Programm- und Datenordner bleiben liegen.
+
+| Datei | Inhalt |
+| --- | --- |
+| `Core/Service/ShackService.cs` | Dienst: Agent am Leben halten, Strg+Alt+Entf (SendSAS) |
+| `Core/Service/ProcessLauncher.cs` | Prozess als SYSTEM bzw. als Benutzer in einer Sitzung starten |
+| `Core/Service/ServiceSetup.cs` | Einrichten/Entfernen |
+| `Core/Service/SystemActions.cs` | Strg+Alt+Entf und Sperren auf Befehl des Clients |
+| `Core/Desktop.cs` | Eingabe-Desktop erkennen und Threads daran binden |
+
 ## Stufe 1c: Maus und Tastatur (Stand 0.4.0)
 
 - **Maus** über dem Bild: Bewegen, Tasten (links, rechts, Mitte, X1/X2), Rad senkrecht und waagrecht.

@@ -26,6 +26,7 @@ public sealed class SessionClient : IAsyncDisposable
     public event Action<int>? VideoReset;            // Monitor
     public event Action<int, int>? VideoInfo;        // Breite, Höhe
     public event Action<string>? VideoError;
+    public event Action<string>? Info;              // Rückmeldung des Servers (z. B. "Strg+Alt+Entf ausgelöst")
 
     public string ServerName { get; private set; } = "";
     public string ServerFingerprint { get; private set; } = "";
@@ -116,6 +117,7 @@ public sealed class SessionClient : IAsyncDisposable
                     case "VideoReset": VideoReset?.Invoke(m.Monitor); break;
                     case "VideoInfo": VideoInfo?.Invoke(m.Width, m.Height); break;
                     case "VideoError": VideoError?.Invoke(m.Text ?? "unbekannter Fehler"); break;
+                    case "Info": Info?.Invoke(m.Text ?? ""); break;
                 }
             }
         }
@@ -162,6 +164,10 @@ public sealed class SessionClient : IAsyncDisposable
             // Ende wird über die Leseschleife gemeldet.
         }
     }
+
+    /// <summary>Einfacher Befehl an den Server, z. B. "SendSas" oder "Lock".</summary>
+    public Task SendCommandAsync(string type) =>
+        _conn!.SendControlAsync(new ControlMessage { Type = type }, _cts.Token);
 
     public Task RequestKeyframeAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);
