@@ -60,7 +60,7 @@ Wie AnyDesk/RustDesk/Sunshine: Ein Windows-Dienst sorgt für Sperrbildschirm, An
 - **Ablauf:** Dienst (SYSTEM) → startet in der Konsolensitzung `ShackRemote.exe /agent` als SYSTEM → der Agent ist der
   eigentliche Server. Aufnahme- und Eingabe-Thread hängen sich jeweils an den aktiven Desktop
   (normal „Default“, Sperr-/Anmeldebildschirm „Winlogon“).
-- **Client-Leiste:** Knöpfe **Strg+Alt+Entf** und **Sperren** (Win+L und Strg+Alt+Entf lassen sich am Laptop nicht abfangen).
+- **Client-Leiste:** rechts im „…“-Menü **Strg+Alt+Entf senden** und **Shack-PC sperren** (Win+L und Strg+Alt+Entf lassen sich am Laptop nicht abfangen).
 - **Verwaltung:** Läuft der Dienst, ist ein von Hand gestartetes Server-Fenster nur noch Verwaltung (kein zweiter Server).
 - **Protokolle:** `C:\ProgramData\ShackRemote\dienst.log` und `agent.log`.
 - **Entfernen:** Knopf „Dienst entfernen“. Programm- und Datenordner bleiben liegen.

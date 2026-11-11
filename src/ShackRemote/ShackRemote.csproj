@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ShackRemote</AssemblyName>
     <RootNamespace>ShackRemote</RootNamespace>
-    <Version>0.9.5</Version>
+    <Version>0.9.6</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- Dunkler Modus von WinForms (Application.SetColorMode) ist in .NET 10 noch als experimentell markiert -->
     <NoWarn>$(NoWarn);WFO5001</NoWarn>

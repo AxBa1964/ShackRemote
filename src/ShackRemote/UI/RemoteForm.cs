@@ -10,6 +10,40 @@ namespace ShackRemote.UI;
 /// </summary>
 public sealed class RemoteForm : Form
 {
+    // Segoe Fluent Icons / MDL2 (Codes laut Microsoft-Liste): TVMonitor, More, KeyboardClassic, Lock
+    private const char GlyphMonitor = '\uE7F4', GlyphMore = '\uE712', GlyphKeyboard = '\uE765', GlyphLock = '\uE72E';
+
+    /// <summary>Symbol des Windows-Explorers (aus explorer.exe), passend skaliert; ersatzweise das Ordnersymbol.</summary>
+    private static Image ExplorerImage(Control scaleFrom)
+    {
+        int size = scaleFrom.LogicalToDeviceUnits(20);
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        using var icon = FilePane.LargeShellIcon(explorer);
+        if (icon is null) return Theme.Glyph('\uE8B7', scaleFrom, Theme.Text, 20);
+        using var src = icon.ToBitmap();
+        var bmp = new Bitmap(size, size);
+        using var g = Graphics.FromImage(bmp);
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.DrawImage(src, new Rectangle(0, 0, size, size));
+        return bmp;
+    }
+
+    /// <summary>Farben für das "…"-Menü passend zu Hell/Dunkel.</summary>
+    private sealed class MenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Theme.Window;
+        public override Color ImageMarginGradientBegin => Theme.Window;
+        public override Color ImageMarginGradientMiddle => Theme.Window;
+        public override Color ImageMarginGradientEnd => Theme.Window;
+        public override Color MenuBorder => Theme.Border;
+        public override Color MenuItemBorder => Theme.Hover;
+        public override Color MenuItemSelected => Theme.Hover;
+        public override Color MenuItemSelectedGradientBegin => Theme.Hover;
+        public override Color MenuItemSelectedGradientEnd => Theme.Hover;
+        public override Color SeparatorDark => Theme.Border;
+        public override Color SeparatorLight => Theme.Border;
+    }
+
     private readonly SessionClient _session;
     private readonly VideoPanel _video;
     private readonly Label _info;
@@ -48,13 +82,15 @@ public sealed class RemoteForm : Form
             ? session.Monitors.OrderBy(m => m.Left).ThenBy(m => m.Top).ToList()
             : Enumerable.Range(0, 3).Select(i => new MonitorInfo { Index = i, Display = i + 1, Width = 1920, Height = 1080 }).ToList();
 
+        // Kopfleiste: links Monitore, Dateien, Ton – rechts unauffällig "…" mit Strg+Alt+Entf und Sperren
         var toolbar = new FlowLayoutPanel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Padding = new Padding(6, 4, 6, 2),
             WrapContents = false,
+            Margin = new Padding(0),
         };
         // Beschriftung nach Lage (Windows-Nummern weichen von den Anzeigeeinstellungen ab)
         string[] names = list.Count switch
@@ -69,25 +105,20 @@ public sealed class RemoteForm : Form
         {
             var monitor = list[pos];
             _labels[monitor] = names[pos];
-            var b = LayoutKit.MakeButton(names[pos] + (monitor.Primary ? " ★" : ""));
-            b.MinimumSize = new Size(100, 0);
+            var b = LayoutKit.MakeButton(" " + names[pos] + (monitor.Primary ? " ★" : ""));
+            b.MinimumSize = new Size(110, 0);
+            b.TextImageRelation = TextImageRelation.ImageBeforeText;
+            b.HandleCreated += (_, _) => b.Image = Theme.Glyph(GlyphMonitor, b, Theme.Text, 18);
             b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
             tips.SetToolTip(b, $"Strg+Alt+F{pos + 1} · {monitor.Width} × {monitor.Height}" + (monitor.Primary ? " · Hauptbildschirm" : ""));
             _monitors.Add((monitor, b));
             toolbar.Controls.Add(b);
         }
 
-        var sas = LayoutKit.MakeButton("Strg+Alt+Entf");
-        sas.Margin = new Padding(18, 3, 3, 3);
-        sas.Click += async (_, _) => await CommandAsync("SendSas");
-        tips.SetToolTip(sas, "Strg+Alt+Entf auf dem Shack-PC (z. B. zum Entsperren). Braucht den Dienst auf dem Shack-PC.");
-        var lockButton = LayoutKit.MakeButton("Sperren");
-        lockButton.Click += async (_, _) => await CommandAsync("Lock");
-        tips.SetToolTip(lockButton, "Shack-PC sperren (Win+L wirkt immer nur auf den Laptop).");
-        toolbar.Controls.Add(sas);
-        toolbar.Controls.Add(lockButton);
-
-        var filesButton = LayoutKit.MakeButton("Dateien");
+        var filesButton = LayoutKit.MakeButton(" Dateien");
+        filesButton.Margin = new Padding(18, 3, 3, 6);
+        filesButton.TextImageRelation = TextImageRelation.ImageBeforeText;
+        filesButton.HandleCreated += (_, _) => filesButton.Image = ExplorerImage(filesButton);
         filesButton.Click += (_, _) => OpenFiles();
         tips.SetToolTip(filesButton, "Dateifenster: Laptop und Shack-PC nebeneinander (kopieren, verschieben, löschen …)");
         toolbar.Controls.Add(filesButton);
@@ -111,10 +142,48 @@ public sealed class RemoteForm : Form
         var statusBar = new Panel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(26), Padding = new Padding(10, 0, 10, 0), BackColor = Theme.Surface };
         statusBar.Controls.Add(_info);
 
+        // --- Rechts: "…"-Menü für seltene Aktionen --------------------------------------------
+        var more = new Button
+        {
+            Size = new Size(40, 34),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Surface,
+            Margin = new Padding(3, 4, 8, 4),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false,
+            Tag = "themed",
+        };
+        more.FlatAppearance.BorderSize = 0;
+        more.FlatAppearance.MouseOverBackColor = Theme.Hover;
+        more.FlatAppearance.MouseDownBackColor = Theme.Pressed;
+        more.HandleCreated += (_, _) => more.Image = Theme.Glyph(GlyphMore, more, Theme.SubtleText, 18);
+        tips.SetToolTip(more, "Weitere Aktionen: Strg+Alt+Entf, Shack-PC sperren");
+
+        var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new MenuColors()) { RoundedEdges = false }, BackColor = Theme.Window, ShowImageMargin = true };
+        ToolStripMenuItem Item(string text, char glyph, string tip, Func<Task> action)
+        {
+            var item = new ToolStripMenuItem(text) { ForeColor = Theme.Text, ToolTipText = tip, Padding = new Padding(0, 3, 0, 3) };
+            item.Click += async (_, _) => await action();
+            menu.HandleCreated += (_, _) => item.Image = Theme.Glyph(glyph, more, Theme.Text, 16);
+            return item;
+        }
+        menu.Items.Add(Item("Strg+Alt+Entf senden", GlyphKeyboard,
+            "Strg+Alt+Entf auf dem Shack-PC (z. B. zum Entsperren). Braucht den Dienst auf dem Shack-PC.", () => CommandAsync("SendSas")));
+        menu.Items.Add(Item("Shack-PC sperren", GlyphLock,
+            "Shack-PC sperren (Win+L wirkt immer nur auf den Laptop).", () => CommandAsync("Lock")));
+        more.Click += (_, _) => menu.Show(more, new Point(more.Width - menu.PreferredSize.Width, more.Height));
+
+        var head = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, Margin = new Padding(0), BackColor = Theme.Surface };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        head.Controls.Add(toolbar, 0, 0);
+        head.Controls.Add(more, 1, 0);
+
         _video = new VideoPanel { Dock = DockStyle.Fill };
 
         Controls.Add(_video);
-        Controls.Add(toolbar);
+        Controls.Add(head);
         Controls.Add(statusBar);
         ResumeLayout(true);
 

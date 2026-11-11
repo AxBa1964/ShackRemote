@@ -368,6 +368,18 @@ public sealed class FilePane : UserControl
         return key;
     }
 
+    /// <summary>Großes Shell-Symbol einer Datei (z. B. explorer.exe) – wird von der Kopfleiste genutzt.</summary>
+    internal static Icon? LargeShellIcon(string path)
+    {
+        const uint SHGFI_ICON = 0x100, SHGFI_LARGEICON = 0x0;
+        var info = new SHFILEINFO();
+        if (SHGetFileInfo(path, 0, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), SHGFI_ICON | SHGFI_LARGEICON) == IntPtr.Zero
+            || info.hIcon == IntPtr.Zero)
+            return null;
+        try { return (Icon)Icon.FromHandle(info.hIcon).Clone(); }
+        finally { DestroyIcon(info.hIcon); }
+    }
+
     private static Icon? ShellIcon(string path, bool useAttributes, bool dir)
     {
         const uint SHGFI_ICON = 0x100, SHGFI_SMALLICON = 0x1, SHGFI_USEFILEATTRIBUTES = 0x10;
