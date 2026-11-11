@@ -9,6 +9,11 @@
   Encoder je Grafikkarte wird beim nächsten Mal zuerst probiert. Der Client zeigt den Encoder in der Infozeile.
 - **Getestet** ist bisher nur Intel Quick Sync (N100). NVENC und AMF sind nach FFmpeg-Quelltext/-Doku umgesetzt,
   aber mangels Hardware **ungetestet**.
+- **Test 11.11.2026, Laptop als Server** (Intel Arc + NVIDIA, Optimus): eingebauter Bildschirm 3200×2000 hängt an der
+  Intel-Grafik → Quick Sync, kodiert 16–51 fps (Kodieren 16–63 ms je Bild), Bild beim Client flüssig. NVENC nur mit
+  Monitor an einem NVIDIA-Anschluss testbar.
+- **Bekannte Grenze hohe Auflösung:** Bei WQHD/4K/3200×2000 sinkt die Bildrate. Möglich wäre, auf der Grafikkarte
+  vor dem Kodieren zu verkleinern (FFmpeg 9 hat `vpp_qsv` und `scale_d3d11`) – bisher nicht nötig.
 - **Noch offen:** Monitore werden nur beim Verbinden gezählt (An-/Abstecken während der Sitzung → neu verbinden).
 
 ## Dienstbetrieb (Stand 0.5.0)
