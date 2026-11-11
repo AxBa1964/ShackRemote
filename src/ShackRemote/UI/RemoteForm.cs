@@ -158,6 +158,8 @@ public sealed class RemoteForm : Form
         var area = _video.ClientSize;
         if (area.Width < 16 || area.Height < 16) return new Size(320, 180);
         double scale = Math.Min((double)area.Width / _sourceWidth, (double)area.Height / _sourceHeight);
+        // Nicht über die Originalgröße hinaus vergrößern: kostet nur Rechenzeit und bringt keine Schärfe.
+        scale = Math.Min(scale, 1.0);
         int w = Math.Max(64, (int)(_sourceWidth * scale)) & ~1;   // gerade Werte
         int h = Math.Max(64, (int)(_sourceHeight * scale)) & ~1;
         return new Size(w, h);
@@ -197,9 +199,11 @@ public sealed class RemoteForm : Form
     {
         long bytes = Interlocked.Exchange(ref _bytes, 0);
         int frames = Interlocked.Exchange(ref _framesDecoded, 0);
+        int drops = _decoder?.TakeDrops() ?? 0;
         var size = _decoder is null ? "–" : $"{_decoder.Width} × {_decoder.Height}";
         _info.Text = $"Monitor {_monitor + 1} ({_sourceWidth} × {_sourceHeight})   Anzeige {size}   " +
-                     $"{frames} fps   {bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms   Strg+1/2/3: Monitor";
+                     $"{frames} fps   {bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
+                     (drops > 0 ? $"   Neusync {drops}×" : "") + "   Strg+1/2/3: Monitor";
     }
 
     private void Ui(Action action)
