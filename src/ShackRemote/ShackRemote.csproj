@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ShackRemote</AssemblyName>
     <RootNamespace>ShackRemote</RootNamespace>
-    <Version>0.5.1</Version>
+    <Version>0.6.0</Version>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 

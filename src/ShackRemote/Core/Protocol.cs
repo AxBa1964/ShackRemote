@@ -47,10 +47,17 @@ public sealed class ControlMessage
     public List<MonitorInfo>? Monitors { get; set; }
 }
 
-/// <summary>Ein Bildschirm des Servers. Index = DXGI-Ausgang (für ddagrab), Display = Windows-Anzeigenummer.</summary>
+/// <summary>
+/// Ein Bildschirm des Servers. Index = laufende Nummer über alle Grafikkarten (Kennung im Protokoll),
+/// Adapter/Output = DXGI-Grafikkarte und -Ausgang (für ddagrab), Display = Windows-interne Anzeigenummer.
+/// </summary>
 public sealed class MonitorInfo
 {
     public int Index { get; set; }
+    public int Adapter { get; set; }
+    public int Output { get; set; }
+    public uint Vendor { get; set; }
+    public string AdapterName { get; set; } = "";
     public int Display { get; set; }
     public string DeviceName { get; set; } = "";
     public int Left { get; set; }

@@ -24,7 +24,7 @@ public sealed class SessionClient : IAsyncDisposable
     public event Action<string>? Disconnected;
     public event Action<byte[], bool>? VideoData;      // H.264-Paket, Schlüsselbild?
     public event Action<int>? VideoReset;            // Monitor
-    public event Action<int, int>? VideoInfo;        // Breite, Höhe
+    public event Action<int, int, string?>? VideoInfo;   // Breite, Höhe, Encoder
     public event Action<string>? VideoError;
     public event Action<string>? Info;              // Rückmeldung des Servers (z. B. "Strg+Alt+Entf ausgelöst")
 
@@ -115,7 +115,7 @@ public sealed class SessionClient : IAsyncDisposable
                 {
                     case "Pong": RoundTripMeasured?.Invoke(Stopwatch.GetElapsedTime(m.T).TotalMilliseconds); break;
                     case "VideoReset": VideoReset?.Invoke(m.Monitor); break;
-                    case "VideoInfo": VideoInfo?.Invoke(m.Width, m.Height); break;
+                    case "VideoInfo": VideoInfo?.Invoke(m.Width, m.Height, m.Text); break;
                     case "VideoError": VideoError?.Invoke(m.Text ?? "unbekannter Fehler"); break;
                     case "Info": Info?.Invoke(m.Text ?? ""); break;
                 }

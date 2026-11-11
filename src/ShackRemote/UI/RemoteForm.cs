@@ -27,6 +27,7 @@ public sealed class RemoteForm : Form
     private bool _ctrl, _alt;
     private ushort _lastX = ushort.MaxValue, _lastY = ushort.MaxValue;
     private double _lastRtt;
+    private string _encoder = "";
 
     public event Action<string>? Log;
 
@@ -195,8 +196,11 @@ public sealed class RemoteForm : Form
         _renderer?.Submit(data, key);
     }
 
-    private void OnVideoInfo(int width, int height) => Ui(() =>
-        Log?.Invoke($"Shack-Monitor {Label(_current)}: {width} × {height}"));
+    private void OnVideoInfo(int width, int height, string? encoder) => Ui(() =>
+    {
+        _encoder = encoder ?? "";
+        Log?.Invoke($"Shack-Monitor {Label(_current)}: {width} × {height}, Encoder {encoder}");
+    });
 
     private void OnVideoError(string message) => Ui(() =>
     {
@@ -225,7 +229,8 @@ public sealed class RemoteForm : Form
         var src = r is null || r.SourceWidth == 0 ? "–" : $"{r.SourceWidth} × {r.SourceHeight}";
         _info.Text = $"{Label(_current)} ({src})   {decoded} fps dekodiert / {shown} angezeigt   " +
                      $"{bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
-                     (resync > 0 ? $"   Neusync {resync}×" : "") + "   Strg+Alt+F1/F2/F3: Monitor";
+                     (resync > 0 ? $"   Neusync {resync}×" : "") +
+                     (_encoder.Length > 0 ? $"   {_encoder}" : "");
     }
 
     // ---- Eingabe ------------------------------------------------------------------------------

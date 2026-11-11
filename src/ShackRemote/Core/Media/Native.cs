@@ -116,3 +116,15 @@ internal static partial class DxgiNative
     [LibraryImport("dxgi.dll")]
     public static partial int CreateDXGIFactory1(in Guid riid, out IntPtr factory);
 }
+
+/// <summary>DXGI_ADAPTER_DESC1</summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal unsafe struct DxgiAdapterDesc1
+{
+    public fixed char Description[128];
+    public uint VendorId, DeviceId, SubSysId, Revision;
+    public nuint DedicatedVideoMemory, DedicatedSystemMemory, SharedSystemMemory;
+    public uint LuidLow;
+    public int LuidHigh;
+    public uint Flags;
+}

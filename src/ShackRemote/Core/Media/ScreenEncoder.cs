@@ -14,7 +14,7 @@ namespace ShackRemote.Core.Media;
 /// </summary>
 public sealed unsafe class ScreenEncoder : IDisposable
 {
-    private readonly int _output;
+    private readonly MonitorInfo _monitor;
     private readonly int _fps;
     private readonly Thread _captureThread;
     private Thread? _encodeThread;
@@ -48,11 +48,11 @@ public sealed unsafe class ScreenEncoder : IDisposable
     public event Action<string>? Log;
     public event Action<string>? Failed;
 
-    public ScreenEncoder(int output, int fps)
+    public ScreenEncoder(MonitorInfo monitor, int fps)
     {
-        _output = output;
+        _monitor = monitor;
         _fps = fps;
-        _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = $"Aufnahme Ausgang {output}", Priority = ThreadPriority.AboveNormal };
+        _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = $"Aufnahme Monitor {monitor.Index}", Priority = ThreadPriority.AboveNormal };
     }
 
     public void Start()
@@ -76,9 +76,9 @@ public sealed unsafe class ScreenEncoder : IDisposable
                     $"Anzeige nicht zugänglich (\"{Desktop.InputDesktopName() ?? "gesperrt"}\") – ohne Dienst kein Sperrbildschirm");
             Log?.Invoke($"Video: Desktop \"{desktop}\"" + (Desktop.IsSystem ? " (Dienstbetrieb)" : ""));
             Open();
-            _encodeThread = new Thread(EncodeLoop) { IsBackground = true, Name = $"Encoder Ausgang {_output}", Priority = ThreadPriority.AboveNormal };
+            _encodeThread = new Thread(EncodeLoop) { IsBackground = true, Name = $"Encoder Monitor {_monitor.Index}", Priority = ThreadPriority.AboveNormal };
             _encodeThread.Start();
-            _sendThread = new Thread(SendLoop) { IsBackground = true, Name = $"Senden Ausgang {_output}" };
+            _sendThread = new Thread(SendLoop) { IsBackground = true, Name = $"Senden Monitor {_monitor.Index}" };
             _sendThread.Start();
 
             var report = Stopwatch.StartNew();
@@ -157,26 +157,80 @@ public sealed unsafe class ScreenEncoder : IDisposable
         }
     }
 
+    /// <summary>Welcher H.264-Encoder benutzt wird.</summary>
+    public enum EncoderKind { IntelQuickSync, NvidiaNvenc, AmdAmf, Software }
+
+    /// <summary>Reihenfolge nach Hersteller der Grafikkarte; Software (libx264, Prozessor) immer als letzte Rettung.</summary>
+    private static EncoderKind[] Candidates(uint vendor) => vendor switch
+    {
+        0x8086 => new[] { EncoderKind.IntelQuickSync, EncoderKind.Software },
+        0x10DE => new[] { EncoderKind.NvidiaNvenc, EncoderKind.Software },
+        0x1002 => new[] { EncoderKind.AmdAmf, EncoderKind.Software },
+        // Hersteller unbekannt: alles der Reihe nach probieren
+        _ => new[] { EncoderKind.IntelQuickSync, EncoderKind.NvidiaNvenc, EncoderKind.AmdAmf, EncoderKind.Software },
+    };
+
+    public static string Describe(EncoderKind kind) => kind switch
+    {
+        EncoderKind.IntelQuickSync => "Intel Quick Sync (h264_qsv)",
+        EncoderKind.NvidiaNvenc => "NVIDIA NVENC (h264_nvenc)",
+        EncoderKind.AmdAmf => "AMD AMF (h264_amf)",
+        _ => "Prozessor (libx264)",
+    };
+
+    /// <summary>Gewählter Encoder (nach dem Start).</summary>
+    public EncoderKind Kind { get; private set; }
+
+    /// <summary>Je Grafikkarte der zuletzt funktionierende Encoder – wird beim nächsten Mal zuerst probiert.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, EncoderKind> Working = new();
+
     private void Open()
     {
-        // --- D3D11-Gerät auf der Intel-GPU (wie "-init_hw_device d3d11va:,vendor_id=0x8086") ---
-        AVBufferRef* device = null;
-        AVDictionary* opts = null;
-        ffmpeg.av_dict_set(&opts, "vendor_id", "0x8086", 0);
-        int ret = ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, opts, 0);
-        ffmpeg.av_dict_free(&opts);
-        if (ret < 0)
+        var order = Candidates(_monitor.Vendor).ToList();
+        if (Working.TryGetValue(_monitor.Adapter, out var known) && order.Remove(known)) order.Insert(0, known);
+
+        Exception? last = null;
+        foreach (var kind in order)
         {
-            Log?.Invoke($"Video: Intel-GPU nicht direkt gefunden ({FfmpegLib.Error(ret)}), nehme Standard-GPU");
-            FfmpegLib.Check(ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, null, 0), "D3D11-Gerät");
+            try
+            {
+                OpenWith(kind);
+                Working[_monitor.Adapter] = kind;
+                return;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Close();
+                // Liegt es am gesperrten/gewechselten Bildschirm, hilft ein anderer Encoder nicht
+                if (!Desktop.ThreadIsOnInputDesktop()) throw;
+                Log?.Invoke($"Video: {Describe(kind)} nicht möglich ({ex.Message}) – versuche nächsten Encoder");
+            }
         }
+        throw last ?? new InvalidOperationException("Kein Encoder verfügbar.");
+    }
+
+    private void OpenWith(EncoderKind kind)
+    {
+        // --- D3D11-Gerät auf der Grafikkarte, an der der Monitor hängt (Adapter-Index wie bei DXGI) ---
+        AVBufferRef* device = null;
+        FfmpegLib.Check(ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA,
+            _monitor.Adapter.ToString(), null, 0), $"D3D11-Gerät auf Grafikkarte {_monitor.Adapter}");
         _device = device;
 
-        // --- Filtergraph: ddagrab -> hwmap(qsv) -> format=qsv -> buffersink ---
+        // --- Filtergraph: ddagrab -> (je Encoder) -> buffersink ---
         _graph = ffmpeg.avfilter_graph_alloc();
         AVFilterContext* sink;
         FfmpegLib.Check(ffmpeg.avfilter_graph_create_filter(&sink, ffmpeg.avfilter_get_by_name("buffersink"), "out", null, null, _graph), "buffersink");
         _sink = sink;
+
+        var grab = $"ddagrab=output_idx={_monitor.Output}:framerate={_fps}:draw_mouse=1";
+        var description = kind switch
+        {
+            EncoderKind.IntelQuickSync => grab + ",hwmap=derive_device=qsv,format=qsv",
+            EncoderKind.NvidiaNvenc or EncoderKind.AmdAmf => grab,                     // D3D11-Textur (BGRA) direkt in den Encoder
+            _ => grab + ",hwdownload,format=bgra,format=yuv420p",                       // in den Hauptspeicher, für libx264
+        };
 
         AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
         inputs->name = ffmpeg.av_strdup("out");
@@ -184,8 +238,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
         inputs->pad_idx = 0;
         inputs->next = null;
         AVFilterInOut* outputs = null;
-        var description = $"ddagrab=output_idx={_output}:framerate={_fps}:draw_mouse=1,hwmap=derive_device=qsv,format=qsv";
-        ret = ffmpeg.avfilter_graph_parse_ptr(_graph, description, &inputs, &outputs, null);
+        int ret = ffmpeg.avfilter_graph_parse_ptr(_graph, description, &inputs, &outputs, null);
         ffmpeg.avfilter_inout_free(&inputs);
         ffmpeg.avfilter_inout_free(&outputs);
         FfmpegLib.Check(ret, "Filtergraph");
@@ -196,40 +249,91 @@ public sealed unsafe class ScreenEncoder : IDisposable
             var f = _graph->filters[i];
             if (f->hw_device_ctx == null) f->hw_device_ctx = ffmpeg.av_buffer_ref(_device);
         }
-        FfmpegLib.Check(ffmpeg.avfilter_graph_config(_graph, null), $"Bildschirmausgang {_output} öffnen");
+        FfmpegLib.Check(ffmpeg.avfilter_graph_config(_graph, null), $"Monitor {_monitor.Display} öffnen");
 
         int width = ffmpeg.av_buffersink_get_w(sink);
         int height = ffmpeg.av_buffersink_get_h(sink);
         var timeBase = ffmpeg.av_buffersink_get_time_base(sink);
 
-        // --- Encoder h264_qsv, Einstellungen wie in Stufe 0 getestet ---
-        var codec = ffmpeg.avcodec_find_encoder_by_name("h264_qsv");
-        if (codec == null) throw new InvalidOperationException("h264_qsv fehlt in dieser FFmpeg-Version.");
+        // --- Encoder ---
+        var name = kind switch
+        {
+            EncoderKind.IntelQuickSync => "h264_qsv",
+            EncoderKind.NvidiaNvenc => "h264_nvenc",
+            EncoderKind.AmdAmf => "h264_amf",
+            _ => "libx264",
+        };
+        var codec = ffmpeg.avcodec_find_encoder_by_name(name);
+        if (codec == null) throw new InvalidOperationException($"{name} fehlt in dieser FFmpeg-Version.");
         var enc = ffmpeg.avcodec_alloc_context3(codec);
         _enc = enc;
         enc->width = width;
         enc->height = height;
-        enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_QSV;
         enc->time_base = timeBase;
         enc->framerate = new AVRational { num = _fps, den = 1 };
         enc->gop_size = _fps * 2;             // regulär alle 2 s, sonst auf Anforderung
-        enc->max_b_frames = 0;
-        enc->global_quality = 20;             // ICQ wie in Stufe 0
+        enc->max_b_frames = 0;                // keine B-Bilder = keine Umsortier-Verzögerung
         enc->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
-        enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
-        ffmpeg.av_opt_set(enc->priv_data, "async_depth", "1", 0);
-        ffmpeg.av_opt_set(enc->priv_data, "forced_idr", "1", 0);
+        static void Opt(void* priv, string key, string value) => ffmpeg.av_opt_set(priv, key, value, 0);
 
-        // Umgehung für die DLL-Fassung von FFmpeg: avutil und avcodec enthalten jeweils eine eigene Kopie
-        // des Intel-oneVPL-Dispatchers. Mit dem "Loader" des QSV-Geräts aus avutil findet der Encoder (avcodec)
-        // keine Implementierung ("Error creating a MFX session: -9", am 11.11.2026 auf dem N100 beobachtet).
-        // Ohne Loader legt avcodec einen eigenen an und hängt seine Sitzung trotzdem an das gemeinsame Gerät.
-        var framesCtx = (AVHWFramesContext*)ffmpeg.av_buffersink_get_hw_frames_ctx(sink)->data;
-        var qsvDevice = (QsvDeviceContext*)framesCtx->device_ctx->hwctx;
-        var savedLoader = qsvDevice->Loader;
-        qsvDevice->Loader = IntPtr.Zero;
-        try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen"); }
-        finally { qsvDevice->Loader = savedLoader; }   // gehört weiter dem Gerät und wird mit ihm freigegeben
+        switch (kind)
+        {
+            case EncoderKind.IntelQuickSync:
+                enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_QSV;
+                enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
+                enc->global_quality = 20;     // ICQ wie in Stufe 0
+                Opt(enc->priv_data, "async_depth", "1");
+                Opt(enc->priv_data, "forced_idr", "1");
+                break;
+            case EncoderKind.NvidiaNvenc:
+                enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_D3D11;
+                enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
+                enc->bit_rate = 0;
+                Opt(enc->priv_data, "preset", "p4");
+                Opt(enc->priv_data, "tune", "ull");           // ultra low latency
+                Opt(enc->priv_data, "rc", "vbr");
+                Opt(enc->priv_data, "cq", "23");
+                Opt(enc->priv_data, "zerolatency", "1");
+                Opt(enc->priv_data, "delay", "0");
+                Opt(enc->priv_data, "forced-idr", "1");
+                break;
+            case EncoderKind.AmdAmf:
+                enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_D3D11;
+                enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
+                Opt(enc->priv_data, "usage", "ultralowlatency");
+                Opt(enc->priv_data, "quality", "speed");
+                Opt(enc->priv_data, "rc", "cqp");
+                Opt(enc->priv_data, "qp_i", "22");
+                Opt(enc->priv_data, "qp_p", "24");
+                Opt(enc->priv_data, "forced_idr", "1");
+                break;
+            default:
+                enc->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
+                enc->thread_count = 0;        // automatisch
+                Opt(enc->priv_data, "preset", "superfast");
+                Opt(enc->priv_data, "tune", "zerolatency");
+                Opt(enc->priv_data, "crf", "23");
+                Opt(enc->priv_data, "forced-idr", "1");
+                break;
+        }
+
+        if (kind == EncoderKind.IntelQuickSync)
+        {
+            // Umgehung für die DLL-Fassung von FFmpeg: avutil und avcodec enthalten jeweils eine eigene Kopie
+            // des Intel-oneVPL-Dispatchers. Mit dem "Loader" des QSV-Geräts aus avutil findet der Encoder (avcodec)
+            // keine Implementierung ("Error creating a MFX session: -9", am 11.11.2026 auf dem N100 beobachtet).
+            // Ohne Loader legt avcodec einen eigenen an und hängt seine Sitzung trotzdem an das gemeinsame Gerät.
+            var framesCtx = (AVHWFramesContext*)ffmpeg.av_buffersink_get_hw_frames_ctx(sink)->data;
+            var qsvDevice = (QsvDeviceContext*)framesCtx->device_ctx->hwctx;
+            var savedLoader = qsvDevice->Loader;
+            qsvDevice->Loader = IntPtr.Zero;
+            try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), $"{name} öffnen"); }
+            finally { qsvDevice->Loader = savedLoader; }   // gehört weiter dem Gerät und wird mit ihm freigegeben
+        }
+        else
+        {
+            FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), $"{name} öffnen");
+        }
 
         // --- SPS/PPS vor jedes Schlüsselbild (dump_extra), damit der Client jederzeit einsteigen kann ---
         AVBSFContext* bsf;
@@ -239,7 +343,9 @@ public sealed unsafe class ScreenEncoder : IDisposable
         bsf->time_base_in = enc->time_base;
         FfmpegLib.Check(ffmpeg.av_bsf_init(bsf), "dump_extra init");
 
-        Log?.Invoke($"Video: Ausgang {_output}, {width} × {height}, {_fps} fps, h264_qsv (Aufnahme, Encoder, Senden getrennt)");
+        Kind = kind;
+        Log?.Invoke($"Video: Monitor {_monitor.Display} (Grafikkarte {_monitor.Adapter}, Ausgang {_monitor.Output}), " +
+                    $"{width} × {height}, {_fps} fps, {Describe(kind)}");
         Started?.Invoke(width, height);
     }
 

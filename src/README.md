@@ -1,5 +1,16 @@
 # ShackRemote – Quellcode
 
+## Andere PCs: Grafikkarten und Encoder (Stand 0.6.0)
+
+- **Alle Grafikkarten** werden nach Monitoren abgefragt (z. B. Prozessorgrafik + Steckkarte). Jeder Monitor wird auf
+  der Grafikkarte aufgenommen, an der er hängt.
+- **Encoder je Hersteller:** Intel → Quick Sync (`h264_qsv`), NVIDIA → NVENC (`h264_nvenc`), AMD → AMF (`h264_amf`);
+  klappt das nicht, **Prozessor** (`libx264`, superfast/zerolatency) als letzte Rettung. Der zuletzt funktionierende
+  Encoder je Grafikkarte wird beim nächsten Mal zuerst probiert. Der Client zeigt den Encoder in der Infozeile.
+- **Getestet** ist bisher nur Intel Quick Sync (N100). NVENC und AMF sind nach FFmpeg-Quelltext/-Doku umgesetzt,
+  aber mangels Hardware **ungetestet**.
+- **Noch offen:** Monitore werden nur beim Verbinden gezählt (An-/Abstecken während der Sitzung → neu verbinden).
+
 ## Dienstbetrieb (Stand 0.5.0)
 
 Wie AnyDesk/RustDesk/Sunshine: Ein Windows-Dienst sorgt für Sperrbildschirm, Anmeldung und Strg+Alt+Entf.

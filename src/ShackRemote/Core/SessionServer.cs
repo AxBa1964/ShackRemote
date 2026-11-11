@@ -141,7 +141,7 @@ public sealed class SessionServer : IDisposable
                 {
                     monitors = DxgiOutputs.List();
                     Log?.Invoke("Monitore: " + string.Join(", ", monitors.Select(mo =>
-                        $"Anzeige {mo.Display} = Ausgang {mo.Index} ({mo.Width}×{mo.Height} bei {mo.Left},{mo.Top})")));
+                        $"Anzeige {mo.Display} = Grafikkarte {mo.Adapter} \"{mo.AdapterName}\" Ausgang {mo.Output} ({mo.Width}×{mo.Height} bei {mo.Left},{mo.Top})")));
                 }
                 catch (Exception ex)
                 {
@@ -153,7 +153,7 @@ public sealed class SessionServer : IDisposable
                     Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version, Monitors = monitors,
                 }, ct);
                 connected = true;
-                using var video = new VideoChannel(conn, VideoFps, msg => Log?.Invoke(msg));
+                using var video = new VideoChannel(conn, VideoFps, monitors, msg => Log?.Invoke(msg));
                 MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
                 ClientConnected?.Invoke($"{name} ({remote})");
 
@@ -233,8 +233,11 @@ public sealed class SessionServer : IDisposable
         private int _failures;
         private string? _lastError;
 
-        public VideoChannel(FramedConnection conn, int fps, Action<string> log)
+        private readonly List<MonitorInfo>? _monitors;
+
+        public VideoChannel(FramedConnection conn, int fps, List<MonitorInfo>? monitors, Action<string> log)
         {
+            _monitors = monitors;
             _conn = conn;
             _fps = fps;
             _log = log;
@@ -274,12 +277,18 @@ public sealed class SessionServer : IDisposable
         {
             int output = _output;
             _conn.SendControlAsync(new ControlMessage { Type = "VideoReset", Monitor = output }).GetAwaiter().GetResult();
-            var encoder = new ScreenEncoder(output, _fps);
+            // Monitor zur Kennung; ohne Liste (Ermittlung fehlgeschlagen) erste Grafikkarte, Hersteller unbekannt
+            var monitor = _monitors?.FirstOrDefault(m => m.Index == output)
+                          ?? new MonitorInfo { Index = output, Adapter = 0, Output = output, Display = output + 1 };
+            var encoder = new ScreenEncoder(monitor, _fps);
             encoder.Log += _log;
             encoder.Started += (w, h) =>
             {
                 // Läuft im Aufnahme-Thread: hier KEIN lock(_gate) – Stop() hält ihn und wartet auf diesen Thread.
-                _ = _conn.SendControlAsync(new ControlMessage { Type = "VideoInfo", Monitor = output, Width = w, Height = h });
+                _ = _conn.SendControlAsync(new ControlMessage
+                {
+                    Type = "VideoInfo", Monitor = output, Width = w, Height = h, Text = ScreenEncoder.Describe(encoder.Kind),
+                });
             };
             encoder.Failed += msg => OnFailed(encoder, msg);
             encoder.PacketReady += (data, key) =>
