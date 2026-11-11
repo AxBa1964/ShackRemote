@@ -20,6 +20,7 @@ public sealed class ClientForm : Form
     private readonly TextBox _log;
 
     private SessionClient? _session;
+    private RemoteForm? _remote;
 
     public ClientForm(X509Certificate2 cert)
     {
@@ -95,10 +96,13 @@ public sealed class ClientForm : Form
 
     private void ResizeColumns()
     {
-        // Spalten an Inhalt bzw. Überschrift anpassen, je nachdem was breiter ist.
+        // Jede Spalte so breit wie Inhalt ODER Überschrift – je nachdem, was breiter ist.
         foreach (ColumnHeader c in _servers.Columns)
         {
-            c.Width = -2; // -2 = an Überschrift UND Inhalt anpassen (WinForms-Konvention)
+            c.AutoResize(ColumnHeaderAutoResizeStyle.ColumnContent);
+            int content = c.Width;
+            c.AutoResize(ColumnHeaderAutoResizeStyle.HeaderSize);
+            c.Width = Math.Max(content, c.Width);
         }
     }
 
@@ -110,9 +114,11 @@ public sealed class ClientForm : Form
         try
         {
             var known = AppSettings.Read(s => s.KnownServers.ToList());
+            var own = NetInfo.GetAll().Select(a => a.Address).ToHashSet();
             var targets = known.SelectMany(k => k.Addresses)
                                .Select(a => IPAddress.TryParse(a, out var ip) ? ip : null)
-                               .OfType<IPAddress>();
+                               .OfType<IPAddress>()
+                               .Where(ip => !own.Contains(ip));
 
             var found = await DiscoveryClient.SearchAsync(targets, TimeSpan.FromSeconds(1.5), msg => Log(msg));
             foreach (var f in found.OrderBy(f => f.Info.Name))
@@ -201,6 +207,19 @@ public sealed class ClientForm : Form
             _status.Text = $"Verbunden mit {session.ServerName} ({address})";
             Log($"Verbunden mit {session.ServerName}, Zertifikat {Identity.Short(session.ServerFingerprint)}");
             _disconnect.Enabled = true;
+
+            var remote = new RemoteForm(session);
+            remote.Log += msg => Log(msg);
+            remote.FormClosed += async (_, _) =>
+            {
+                if (ReferenceEquals(_remote, remote))
+                {
+                    _remote = null;
+                    await DisconnectAsync("Fernsteuerungsfenster geschlossen – getrennt.");
+                }
+            };
+            _remote = remote;
+            remote.Show();
         }
         catch (Exception ex)
         {
@@ -216,6 +235,10 @@ public sealed class ClientForm : Form
 
     private async Task DisconnectAsync(string? message)
     {
+        var r = _remote;
+        _remote = null;
+        r?.Close();
+
         var s = _session;
         _session = null;
         if (s is not null) await s.DisposeAsync();

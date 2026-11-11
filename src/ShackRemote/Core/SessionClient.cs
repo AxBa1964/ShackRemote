@@ -19,6 +19,10 @@ public sealed class SessionClient : IAsyncDisposable
 
     public event Action<double>? RoundTripMeasured;   // Millisekunden
     public event Action<string>? Disconnected;
+    public event Action<byte[]>? VideoData;
+    public event Action<int>? VideoReset;            // Monitor
+    public event Action<int, int>? VideoInfo;        // Breite, Höhe
+    public event Action<string>? VideoError;
 
     public string ServerName { get; private set; } = "";
     public string ServerFingerprint { get; private set; } = "";
@@ -92,10 +96,20 @@ public sealed class SessionClient : IAsyncDisposable
             while (!ct.IsCancellationRequested)
             {
                 var (type, payload) = await _conn!.ReadAsync(ct);
+                if (type == MsgType.Video)
+                {
+                    VideoData?.Invoke(payload);
+                    continue;
+                }
                 if (type != MsgType.Control) continue;
                 var m = System.Text.Json.JsonSerializer.Deserialize<ControlMessage>(payload);
-                if (m?.Type == "Pong")
-                    RoundTripMeasured?.Invoke(Stopwatch.GetElapsedTime(m.T).TotalMilliseconds);
+                switch (m?.Type)
+                {
+                    case "Pong": RoundTripMeasured?.Invoke(Stopwatch.GetElapsedTime(m.T).TotalMilliseconds); break;
+                    case "VideoReset": VideoReset?.Invoke(m.Monitor); break;
+                    case "VideoInfo": VideoInfo?.Invoke(m.Width, m.Height); break;
+                    case "VideoError": VideoError?.Invoke(m.Text ?? "unbekannter Fehler"); break;
+                }
             }
         }
         catch (Exception ex)
@@ -121,6 +135,12 @@ public sealed class SessionClient : IAsyncDisposable
             // Ende wird über die Leseschleife gemeldet.
         }
     }
+
+    public Task StartVideoAsync(int monitor) =>
+        _conn!.SendControlAsync(new ControlMessage { Type = "StartVideo", Monitor = monitor }, _cts.Token);
+
+    public Task StopVideoAsync() =>
+        _conn!.SendControlAsync(new ControlMessage { Type = "StopVideo" }, _cts.Token);
 
     public async ValueTask DisposeAsync()
     {

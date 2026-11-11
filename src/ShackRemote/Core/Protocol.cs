@@ -28,7 +28,10 @@ public enum MsgType : byte
     Input = 4,
 }
 
-/// <summary>Steuernachricht (JSON). Type: Hello, PairRequired, PairProof, PairResult, Welcome, Ping, Pong.</summary>
+/// <summary>
+/// Steuernachricht (JSON). Type: Hello, PairRequired, PairProof, PairResult, Welcome, Ping, Pong,
+/// StartVideo (Monitor), StopVideo, VideoReset (Monitor), VideoInfo (Width, Height).
+/// </summary>
 public sealed class ControlMessage
 {
     public string Type { get; set; } = "";
@@ -38,6 +41,9 @@ public sealed class ControlMessage
     public bool Ok { get; set; }
     public string? Text { get; set; }
     public long T { get; set; }
+    public int Monitor { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 /// <summary>Antwort auf die Server-Suche.</summary>

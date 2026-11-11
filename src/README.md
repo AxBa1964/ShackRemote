@@ -1,5 +1,17 @@
 # ShackRemote – Quellcode
 
+## Stufe 1b: Bild (Stand 0.2.0)
+
+- Nach dem Verbinden öffnet sich das **Sitzungsfenster** mit dem Bild des Shack-Monitors.
+- Oben: Knöpfe **Monitor 1/2/3** (bzw. **Strg+1/2/3**), dazu Auflösung, Anzeigegröße, fps, kbit/s und Ping.
+- Server: `ffmpeg` nimmt per Desktop Duplication auf und kodiert per Quick Sync (Befehl aus Stufe 0),
+  die Daten laufen über die TLS-Verbindung.
+- Client: `ffmpeg` dekodiert und skaliert auf die Fenstergröße; das Seitenverhältnis bleibt erhalten.
+- **Voraussetzung vorerst:** `ffmpeg.exe` auf beiden Rechnern – im PATH (z. B. `winget install ffmpeg`)
+  oder neben `ShackRemote.exe`. Die Einbettung in die Exe folgt später.
+- „Monitor 1/2/3“ entspricht DXGI-Ausgang 0/1/2 – die Reihenfolge kann von der Windows-Nummerierung abweichen.
+
+
 ## Stufe 1a: Gerüst (Stand 0.1.0)
 
 Enthalten: Rollenwahl, Adresserkennung (WLAN / LAN / Tailscale), Server-Suche per UDP-Broadcast,

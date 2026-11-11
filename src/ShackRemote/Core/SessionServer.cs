@@ -17,6 +17,9 @@ public sealed class SessionServer : IDisposable
     private CancellationTokenSource _cts = new();
     private int _busy;
 
+    /// <summary>Bildrate der Aufnahme. 60 fps wurden in Stufe 0 auf dem N100 erreicht (54–57 fps).</summary>
+    public int VideoFps { get; set; } = 60;
+
     public event Action<string>? Log;
     public event Action<string, string>? PairingCodeShown;   // Code, Client-Name
     public event Action? PairingEnded;
@@ -133,15 +136,45 @@ public sealed class SessionServer : IDisposable
 
                 await conn.SendControlAsync(new ControlMessage { Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version }, ct);
                 connected = true;
+                VideoSource? video = null;
                 ClientConnected?.Invoke($"{name} ({remote})");
 
-                while (!ct.IsCancellationRequested)
+                try
                 {
-                    var (type, payload) = await conn.ReadAsync(ct);
-                    if (type != MsgType.Control) continue; // Video/Audio/Input folgen in Stufe 1b/1c
-                    var m = System.Text.Json.JsonSerializer.Deserialize<ControlMessage>(payload);
-                    if (m?.Type == "Ping")
-                        await conn.SendControlAsync(new ControlMessage { Type = "Pong", T = m.T }, ct);
+                    while (!ct.IsCancellationRequested)
+                    {
+                        var (type, payload) = await conn.ReadAsync(ct);
+                        if (type != MsgType.Control) continue; // Eingabe folgt in Stufe 1c
+                        var m = System.Text.Json.JsonSerializer.Deserialize<ControlMessage>(payload);
+                        switch (m?.Type)
+                        {
+                            case "Ping":
+                                await conn.SendControlAsync(new ControlMessage { Type = "Pong", T = m.T }, ct);
+                                break;
+                            case "StartVideo":
+                                video?.Dispose();
+                                video = new VideoSource(conn, msg => Log?.Invoke(msg));
+                                try
+                                {
+                                    await video.StartAsync(Math.Clamp(m.Monitor, 0, 15), VideoFps);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log?.Invoke($"Video kann nicht starten: {ex.Message}");
+                                    await conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = ex.Message }, ct);
+                                }
+                                break;
+                            case "StopVideo":
+                                video?.Dispose();
+                                video = null;
+                                Log?.Invoke("Video gestoppt");
+                                break;
+                        }
+                    }
+                }
+                finally
+                {
+                    video?.Dispose();
                 }
             }
         }
