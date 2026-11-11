@@ -108,7 +108,7 @@ public sealed class RemoteForm : Form
             var b = LayoutKit.MakeButton(" " + names[pos] + (monitor.Primary ? " ★" : ""));
             b.MinimumSize = new Size(110, 0);
             b.TextImageRelation = TextImageRelation.ImageBeforeText;
-            b.HandleCreated += (_, _) => b.Image = Theme.Glyph(GlyphMonitor, b, Theme.Text, 18);
+            b.Image = Theme.Glyph(GlyphMonitor, b, Theme.Text, 18);   // vor dem Anlegen des Fensters setzen (sonst Neuaufbau während CreateControl -> Fehler 1400)
             b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
             tips.SetToolTip(b, $"Strg+Alt+F{pos + 1} · {monitor.Width} × {monitor.Height}" + (monitor.Primary ? " · Hauptbildschirm" : ""));
             _monitors.Add((monitor, b));
@@ -118,7 +118,7 @@ public sealed class RemoteForm : Form
         var filesButton = LayoutKit.MakeButton(" Dateien");
         filesButton.Margin = new Padding(18, 3, 3, 6);
         filesButton.TextImageRelation = TextImageRelation.ImageBeforeText;
-        filesButton.HandleCreated += (_, _) => filesButton.Image = ExplorerImage(filesButton);
+        filesButton.Image = ExplorerImage(filesButton);   // vor dem Anlegen des Fensters setzen (sonst Neuaufbau während CreateControl -> Fehler 1400)
         filesButton.Click += (_, _) => OpenFiles();
         tips.SetToolTip(filesButton, "Dateifenster: Laptop und Shack-PC nebeneinander (kopieren, verschieben, löschen …)");
         toolbar.Controls.Add(filesButton);
@@ -157,7 +157,7 @@ public sealed class RemoteForm : Form
         more.FlatAppearance.BorderSize = 0;
         more.FlatAppearance.MouseOverBackColor = Theme.Hover;
         more.FlatAppearance.MouseDownBackColor = Theme.Pressed;
-        more.HandleCreated += (_, _) => more.Image = Theme.Glyph(GlyphMore, more, Theme.SubtleText, 18);
+        more.Image = Theme.Glyph(GlyphMore, more, Theme.SubtleText, 18);   // vor dem Anlegen des Fensters setzen (sonst Neuaufbau während CreateControl -> Fehler 1400)
         tips.SetToolTip(more, "Weitere Aktionen: Strg+Alt+Entf, Shack-PC sperren");
 
         var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new MenuColors()) { RoundedEdges = false }, BackColor = Theme.Window, ShowImageMargin = true };
@@ -165,7 +165,7 @@ public sealed class RemoteForm : Form
         {
             var item = new ToolStripMenuItem(text) { ForeColor = Theme.Text, ToolTipText = tip, Padding = new Padding(0, 3, 0, 3) };
             item.Click += async (_, _) => await action();
-            menu.HandleCreated += (_, _) => item.Image = Theme.Glyph(glyph, more, Theme.Text, 16);
+            item.Image = Theme.Glyph(glyph, more, Theme.Text, 16);
             return item;
         }
         menu.Items.Add(Item("Strg+Alt+Entf senden", GlyphKeyboard,
