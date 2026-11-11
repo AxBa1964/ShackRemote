@@ -152,7 +152,7 @@ public sealed class SessionServer : IDisposable
                     Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version, Monitors = monitors,
                 }, ct);
                 connected = true;
-                ScreenEncoder? video = null;
+                using var video = new VideoChannel(conn, VideoFps, msg => Log?.Invoke(msg));
                 MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
                 ClientConnected?.Invoke($"{name} ({remote})");
 
@@ -175,16 +175,14 @@ public sealed class SessionServer : IDisposable
                                 await conn.SendControlAsync(new ControlMessage { Type = "Pong", T = m.T }, ct);
                                 break;
                             case "StartVideo":
-                                video?.Dispose();
-                                video = StartEncoder(conn, Math.Clamp(m.Monitor, 0, 15));
+                                video.Start(Math.Clamp(m.Monitor, 0, 15));
                                 shown = monitors?.FirstOrDefault(mo => mo.Index == m.Monitor);
                                 break;
                             case "RequestKeyframe":
-                                video?.RequestKeyframe();
+                                video.RequestKeyframe();
                                 break;
                             case "StopVideo":
-                                video?.Dispose();
-                                video = null;
+                                video.Stop();
                                 Log?.Invoke("Video gestoppt");
                                 break;
                         }
@@ -192,7 +190,7 @@ public sealed class SessionServer : IDisposable
                 }
                 finally
                 {
-                    video?.Dispose();
+                    video.Stop();
                     InputInjector.ReleaseAll();
                 }
             }
@@ -209,35 +207,119 @@ public sealed class SessionServer : IDisposable
         }
     }
 
-    private ScreenEncoder? StartEncoder(FramedConnection conn, int output)
+    /// <summary>
+    /// Bildkanal einer Sitzung. Verliert Windows die Bildschirmaufnahme (z. B. Sperrbildschirm, Monitor-Standby,
+    /// Auflösungswechsel, UAC: DXGI_ERROR_ACCESS_LOST), wird sie alle 2 s neu aufgebaut, bis es wieder geht.
+    /// </summary>
+    private sealed class VideoChannel : IDisposable
     {
-        conn.SendControlAsync(new ControlMessage { Type = "VideoReset", Monitor = output }).GetAwaiter().GetResult();
-        var encoder = new ScreenEncoder(output, VideoFps);
-        encoder.Log += msg => Log?.Invoke(msg);
-        encoder.Started += (w, h) => _ = conn.SendControlAsync(new ControlMessage { Type = "VideoInfo", Monitor = output, Width = w, Height = h });
-        encoder.Failed += msg =>
+        private readonly FramedConnection _conn;
+        private readonly int _fps;
+        private readonly Action<string> _log;
+        private readonly object _gate = new();
+        private ScreenEncoder? _encoder;
+        private int _output;
+        private int _failures;
+        private string? _lastError;
+
+        public VideoChannel(FramedConnection conn, int fps, Action<string> log)
         {
-            Log?.Invoke($"Video kann nicht laufen: {msg}");
-            _ = conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = msg });
-        };
-        encoder.PacketReady += (data, key) =>
-        {
-            // Läuft im Encoder-Thread. Warten ist hier gewollt: Ist das Netz langsamer, nimmt ddagrab
-            // einfach das jeweils neueste Bild – es entsteht kein Stau.
-            try { conn.SendAsync(MsgType.Video, VideoPacket.Build(data, key)).GetAwaiter().GetResult(); }
-            catch { /* Verbindung weg – Ende meldet die Leseschleife */ }
-        };
-        try
-        {
-            encoder.Start();
-            return encoder;
+            _conn = conn;
+            _fps = fps;
+            _log = log;
         }
-        catch (Exception ex)
+
+        public void Start(int output)
         {
-            Log?.Invoke($"Video kann nicht starten: {ex.Message}");
-            _ = conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = ex.Message });
-            encoder.Dispose();
-            return null;
+            lock (_gate)
+            {
+                StopLocked();
+                _output = output;
+                Interlocked.Exchange(ref _failures, 0);
+                _lastError = null;
+                StartLocked();
+            }
+        }
+
+        public void RequestKeyframe()
+        {
+            lock (_gate) _encoder?.RequestKeyframe();
+        }
+
+        public void Stop()
+        {
+            lock (_gate) StopLocked();
+        }
+
+        public void Dispose() => Stop();
+
+        private void StopLocked()
+        {
+            _encoder?.Dispose();
+            _encoder = null;
+        }
+
+        private void StartLocked()
+        {
+            int output = _output;
+            _conn.SendControlAsync(new ControlMessage { Type = "VideoReset", Monitor = output }).GetAwaiter().GetResult();
+            var encoder = new ScreenEncoder(output, _fps);
+            encoder.Log += _log;
+            encoder.Started += (w, h) =>
+            {
+                // Läuft im Aufnahme-Thread: hier KEIN lock(_gate) – Stop() hält ihn und wartet auf diesen Thread.
+                _ = _conn.SendControlAsync(new ControlMessage { Type = "VideoInfo", Monitor = output, Width = w, Height = h });
+            };
+            encoder.Failed += msg => OnFailed(encoder, msg);
+            encoder.PacketReady += (data, key) =>
+            {
+                // Läuft im Sende-Thread des Encoders; Warten aufs Netz bremst Aufnahme und Kodierung nicht.
+                // Erst wenn wieder Bilder fließen, gilt die Unterbrechung als beendet.
+                if (Volatile.Read(ref _failures) > 0)
+                {
+                    int failures = Interlocked.Exchange(ref _failures, 0);
+                    if (failures > 0) _log($"Video: Aufnahme läuft wieder (nach {failures} Versuch(en))");
+                    _lastError = null;
+                }
+                try { _conn.SendAsync(MsgType.Video, VideoPacket.Build(data, key)).GetAwaiter().GetResult(); }
+                catch { /* Verbindung weg – Ende meldet die Leseschleife */ }
+            };
+            _encoder = encoder;
+            try
+            {
+                encoder.Start();
+            }
+            catch (Exception ex)
+            {
+                OnFailed(encoder, ex.Message);
+            }
+        }
+
+        private void OnFailed(ScreenEncoder encoder, string message)
+        {
+            // Läuft meist in einem Encoder-Thread: hier KEIN lock(_gate) (siehe Started).
+            if (!ReferenceEquals(Volatile.Read(ref _encoder), encoder)) return;   // alter Encoder, schon ersetzt
+            int failures = Interlocked.Increment(ref _failures);
+            // Nicht bei jedem Versuch protokollieren: erste Meldung, neue Meldung, dann alle 30 Versuche (~1 min)
+            if (message != _lastError || failures % 30 == 1)
+            {
+                _log($"Video unterbrochen: {message} – neuer Versuch alle 2 s (Sperrbildschirm/Monitor-Standby?)");
+                _ = _conn.SendControlAsync(new ControlMessage { Type = "VideoError", Text = $"{message} – wird neu versucht" });
+            }
+            _lastError = message;
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                lock (_gate)
+                {
+                    if (!ReferenceEquals(_encoder, encoder)) return;   // inzwischen gestoppt oder anderer Monitor
+                    encoder.Dispose();
+                    _encoder = null;
+                    try { StartLocked(); }
+                    catch (Exception ex) { _log($"Video-Neustart fehlgeschlagen: {ex.Message}"); }
+                }
+            });
         }
     }
 
