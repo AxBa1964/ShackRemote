@@ -61,29 +61,40 @@ public sealed class FsEntry
     public DateTime Modified { get; set; }
     /// <summary>Nur bei Laufwerken: Bezeichnung und Art, z. B. "Daten (Festplatte)".</summary>
     public string? Info { get; set; }
+    /// <summary>Nur bei Laufwerken: Abfrage dauerte zu lange.</summary>
+    public bool Slow { get; set; }
 }
 
 /// <summary>Gemeinsame Dateioperationen (Server für den Shack-PC, Client für die linke Seite).</summary>
 public static class FsOps
 {
     /// <summary>
-    /// Laufwerke parallel abfragen, jedes höchstens 1,5 s: getrennte Netzlaufwerke oder leere Kartenleser
-    /// können bei der Abfrage sonst viele Sekunden hängen.
+    /// Laufwerke parallel abfragen, alle zusammen höchstens 1,5 s: getrennte Netzlaufwerke oder leere
+    /// Kartenleser können bei der Abfrage sonst viele Sekunden hängen. Zu langsame Laufwerke erscheinen trotzdem
+    /// (ohne Größenangabe), damit man sie öffnen kann.
     /// </summary>
     public static List<FsEntry> Drives()
     {
         var drives = DriveInfo.GetDrives();
         var tasks = drives.Select(d => Task.Run(() => Describe(d))).ToArray();
+        var deadline = Environment.TickCount64 + 1500;
         var result = new List<FsEntry>();
         for (int i = 0; i < drives.Length; i++)
         {
-            if (tasks[i].Wait(1500))
+            int remaining = (int)Math.Max(0, deadline - Environment.TickCount64);
+            if (tasks[i].Wait(remaining))
             {
                 if (tasks[i].Result is { } e) result.Add(e);
             }
-            else if (drives[i].DriveType == DriveType.Network)
+            else
             {
-                result.Add(new FsEntry { Name = drives[i].Name, Dir = true, Info = "Netzlaufwerk – antwortet nicht" });
+                result.Add(new FsEntry
+                {
+                    Name = drives[i].Name,
+                    Dir = true,
+                    Info = $"{DriveKind(drives[i].DriveType)} – antwortet langsam",
+                    Slow = true,
+                });
             }
         }
         return result;

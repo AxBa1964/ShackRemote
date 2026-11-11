@@ -185,7 +185,9 @@ public sealed class FilePane : UserControl
             _drives.Items.Clear();
             foreach (var d in _driveCache) _drives.Items.Add(d);
             _drives.DisplayMember = nameof(FsEntry.Name);
-            Log?.Invoke($"{Title}: {_driveCache.Count} Laufwerke in {sw.Elapsed.TotalSeconds:F1} s");
+            var slow = _driveCache.Where(d => d.Slow).Select(d => $"{d.Name.TrimEnd('\\')} ({d.Info})").ToList();
+            Log?.Invoke($"{Title}: {_driveCache.Count} Laufwerke in {sw.Elapsed.TotalSeconds:F1} s" +
+                        (slow.Count > 0 ? " – langsam: " + string.Join(", ", slow) : ""));
         }
         catch (Exception ex)
         {
