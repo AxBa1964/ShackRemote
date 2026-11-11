@@ -1,28 +1,63 @@
 namespace ShackRemote.UI;
 
-/// <summary>Einfacher Eingabedialog (Kopplungscode, manuelle Adresse).</summary>
+/// <summary>Einfacher Eingabedialog (Kopplungscode). Größe passt sich dem Text an.</summary>
 public sealed class InputDialog : Form
 {
     private readonly TextBox _input;
 
     private InputDialog(string title, string prompt)
     {
-        Text = title;
+        LayoutKit.PrepareForm(this, title);
+        StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterParent;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(420, 150);
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
-        var label = new Label { Text = prompt, Location = new Point(15, 15), Size = new Size(390, 50) };
-        _input = new TextBox { Location = new Point(15, 70), Width = 390, Font = new Font(Font.FontFamily, 14f) };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(230, 112), Width = 85 };
-        var cancel = new Button { Text = "Abbrechen", DialogResult = DialogResult.Cancel, Location = new Point(320, 112), Width = 85 };
+        var root = LayoutKit.Column(3);
+        root.Dock = DockStyle.None;
+        root.AutoSize = true;
+        root.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+
+        var label = new Label
+        {
+            Text = prompt,
+            AutoSize = true,
+            MaximumSize = new Size(440, 0),   // bricht lange Texte um
+            Margin = new Padding(3, 3, 3, 10),
+        };
+
+        _input = new TextBox
+        {
+            Width = 440,
+            Font = new Font("Segoe UI", 16F),
+            Margin = new Padding(3, 3, 3, 10),
+        };
+
+        var ok = LayoutKit.MakeButton("OK");
+        ok.DialogResult = DialogResult.OK;
+        var cancel = LayoutKit.MakeButton("Abbrechen");
+        cancel.DialogResult = DialogResult.Cancel;
+        var buttons = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.RightToLeft,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+        };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+
+        root.Controls.Add(label);
+        root.Controls.Add(_input);
+        root.Controls.Add(buttons);
+        Controls.Add(root);
 
         AcceptButton = ok;
         CancelButton = cancel;
-        Controls.AddRange(new Control[] { label, _input, ok, cancel });
+        ResumeLayout(true);
     }
 
     public static string? Ask(IWin32Window owner, string title, string prompt)

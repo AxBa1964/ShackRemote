@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using ShackRemote.Core;
 
@@ -12,6 +13,7 @@ public sealed class ClientForm : Form
     private readonly Button _search;
     private readonly Button _connect;
     private readonly Button _disconnect;
+    private readonly Button _manualConnect;
     private readonly TextBox _manual;
     private readonly Label _status;
     private readonly Label _rtt;
@@ -23,59 +25,81 @@ public sealed class ClientForm : Form
     {
         _cert = cert;
 
-        Text = $"ShackRemote Client {Protocol.Version} – {Environment.MachineName}";
-        StartPosition = FormStartPosition.CenterScreen;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(680, 540);
-        MinimumSize = new Size(560, 440);
+        LayoutKit.PrepareForm(this, $"ShackRemote Client {Protocol.Version} – {Environment.MachineName}");
+        ClientSize = new Size(760, 600);
+        MinimumSize = new Size(600, 480);
 
+        // --- Serverliste mit Knöpfen ---------------------------------------------------
         _servers = new ListView
         {
-            Location = new Point(12, 12),
-            Size = new Size(540, 160),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             View = View.Details,
             FullRowSelect = true,
             MultiSelect = false,
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            HideSelection = false,
+            Height = 160,
         };
-        _servers.Columns.Add("Server", 150);
-        _servers.Columns.Add("Adresse", 130);
-        _servers.Columns.Add("Netz", 90);
-        _servers.Columns.Add("Status", 150);
+        _servers.Columns.Add("Server");
+        _servers.Columns.Add("Adresse");
+        _servers.Columns.Add("Netz");
+        _servers.Columns.Add("Status");
         _servers.DoubleClick += async (_, _) => await ConnectSelectedAsync();
 
-        _search = new Button { Text = "Suchen", Location = new Point(562, 12), Size = new Size(106, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        _search = LayoutKit.MakeButton("Suchen");
         _search.Click += async (_, _) => await SearchAsync();
-
-        _connect = new Button { Text = "Verbinden", Location = new Point(562, 48), Size = new Size(106, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        _connect = LayoutKit.MakeButton("Verbinden");
         _connect.Click += async (_, _) => await ConnectSelectedAsync();
-
-        _disconnect = new Button { Text = "Trennen", Location = new Point(562, 84), Size = new Size(106, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right, Enabled = false };
+        _disconnect = LayoutKit.MakeButton("Trennen");
+        _disconnect.Enabled = false;
         _disconnect.Click += async (_, _) => await DisconnectAsync("Getrennt.");
 
-        var manualLabel = new Label { Text = "Manuell (IPv4):", Location = new Point(12, 185), AutoSize = true };
-        _manual = new TextBox { Location = new Point(115, 182), Width = 160 };
-        var manualConnect = new Button { Text = "Verbinden", Location = new Point(285, 180), Size = new Size(100, 27) };
-        manualConnect.Click += async (_, _) => await ConnectManualAsync();
+        var listRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true, Margin = new Padding(0) };
+        listRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        listRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        listRow.Controls.Add(_servers, 0, 0);
+        listRow.Controls.Add(LayoutKit.ButtonStack(_search, _connect, _disconnect), 1, 0);
 
-        _status = new Label { Text = "Nicht verbunden", Location = new Point(12, 220), AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
-        _rtt = new Label { Text = "", Location = new Point(12, 245), AutoSize = true };
+        // --- Manuelle Eingabe ------------------------------------------------------------
+        var manualLabel = LayoutKit.MakeLabel("Oder Adresse eingeben (IPv4):");
+        _manual = new TextBox { Width = 180, Margin = new Padding(3, 4, 3, 3) };
+        _manualConnect = LayoutKit.MakeButton("Verbinden");
+        _manualConnect.Click += async (_, _) => await ConnectManualAsync();
+        var manualRow = LayoutKit.Row(manualLabel, _manual, _manualConnect);
 
-        _log = new TextBox
-        {
-            Location = new Point(12, 272),
-            Size = new Size(656, 256),
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
-            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-        };
+        // --- Status und Protokoll --------------------------------------------------------
+        _status = LayoutKit.MakeLabel("Nicht verbunden", bold: true);
+        _rtt = LayoutKit.MakeLabel("");
+        _log = LayoutKit.LogBox();
 
-        Controls.AddRange(new Control[] { _servers, _search, _connect, _disconnect, manualLabel, _manual, manualConnect, _status, _rtt, _log });
+        var root = LayoutKit.Column(6);
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Überschrift
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Liste
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Manuell
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Status
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Umlaufzeit
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));     // Protokoll
+
+        root.Controls.Add(LayoutKit.MakeLabel("Gefundene Server (Doppelklick verbindet):"), 0, 0);
+        root.Controls.Add(listRow, 0, 1);
+        root.Controls.Add(manualRow, 0, 2);
+        root.Controls.Add(_status, 0, 3);
+        root.Controls.Add(_rtt, 0, 4);
+        root.Controls.Add(_log, 0, 5);
+        Controls.Add(root);
+        ResumeLayout(true);
 
         Log($"Eigenes Zertifikat: {Identity.Short(Identity.Fingerprint(_cert))}");
-        Shown += async (_, _) => await SearchAsync();
+        Shown += async (_, _) => { ResizeColumns(); await SearchAsync(); };
         FormClosing += async (_, _) => { if (_session is not null) await _session.DisposeAsync(); };
+    }
+
+    private void ResizeColumns()
+    {
+        // Spalten an Inhalt bzw. Überschrift anpassen, je nachdem was breiter ist.
+        foreach (ColumnHeader c in _servers.Columns)
+        {
+            c.Width = -2; // -2 = an Überschrift UND Inhalt anpassen (WinForms-Konvention)
+        }
     }
 
     private async Task SearchAsync()
@@ -95,15 +119,15 @@ public sealed class ClientForm : Form
             {
                 var isKnown = known.Any(k => string.Equals(k.Fingerprint, f.Info.Fingerprint, StringComparison.OrdinalIgnoreCase));
                 var kind = f.Info.Addresses.FirstOrDefault(a => a.Address == f.RespondedFrom.ToString())?.Kind ?? "?";
-                var item = new ListViewItem(new[]
+                _servers.Items.Add(new ListViewItem(new[]
                 {
                     f.Info.Name,
                     f.RespondedFrom.ToString(),
                     kind,
                     isKnown ? "gekoppelt" : "neu – Kopplung nötig",
-                }) { Tag = f };
-                _servers.Items.Add(item);
+                }) { Tag = f });
             }
+            ResizeColumns();
             Log(found.Count == 0 ? "Kein Server gefunden." : $"{found.Count} Server gefunden.");
             if (_servers.Items.Count > 0) _servers.Items[0].Selected = true;
         }
@@ -124,14 +148,14 @@ public sealed class ClientForm : Form
             Log("Bitte einen Server in der Liste auswählen.");
             return;
         }
-        // Erwarteter Fingerabdruck: was wir beim letzten Mal unter diesem Namen gespeichert haben.
+        // Erwarteter Fingerabdruck: was beim letzten Mal unter diesem Namen gespeichert wurde.
         var expected = AppSettings.Read(s => s.KnownServers.FirstOrDefault(k => k.Name == f.Info.Name)?.Fingerprint);
         await ConnectAsync(f.RespondedFrom, expected, f.Info.Addresses.Select(a => a.Address).ToList());
     }
 
     private async Task ConnectManualAsync()
     {
-        if (!IPAddress.TryParse(_manual.Text.Trim(), out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (!IPAddress.TryParse(_manual.Text.Trim(), out var ip) || ip.AddressFamily != AddressFamily.InterNetwork)
         {
             Log("Bitte eine gültige IPv4-Adresse eingeben.");
             return;
@@ -153,7 +177,8 @@ public sealed class ClientForm : Form
         {
             await session.ConnectAsync(address, expectedFingerprint, serverShort => Task.FromResult(InputDialog.Ask(this,
                 "Kopplung",
-                $"Auf dem Shack-PC wird jetzt ein 6-stelliger Code angezeigt. Bitte hier eingeben.\r\nServer-Zertifikat: {serverShort}")));
+                "Im Server-Fenster wird jetzt ein 6-stelliger Code angezeigt. Bitte hier eingeben und mit Enter bestätigen.\n\n" +
+                $"Zertifikat des Servers: {serverShort}")));
 
             _session = session;
             AppSettings.Update(s =>
@@ -199,6 +224,7 @@ public sealed class ClientForm : Form
     private void SetBusy(bool busy)
     {
         _connect.Enabled = !busy;
+        _manualConnect.Enabled = !busy;
         _search.Enabled = !busy;
         UseWaitCursor = busy;
     }
