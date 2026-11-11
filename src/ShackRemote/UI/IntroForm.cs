@@ -35,7 +35,7 @@ public sealed class IntroForm : Form
         Control art;
         var image = LoadIntroImage();
         if (image is not null)
-            art = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Image = image, Margin = new Padding(0), BackColor = Color.Black };
+            art = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Image = image, Margin = new Padding(0), BackColor = Theme.Surface };
         else
             art = new IntroArt { Dock = DockStyle.Fill, Margin = new Padding(0) };
 
@@ -100,9 +100,16 @@ public sealed class IntroForm : Form
         text.Controls.Add(license, 0, 6);
         text.Controls.Add(bottom, 0, 7);
 
+        // Bildspalte nach Seitenverhältnis des Bildes (Querformat breiter), Textspalte fest daneben
+        int artWidth = 440;
+        if (image is not null && image.Height > 0)
+            artWidth = (int)Math.Clamp(600.0 * image.Width / image.Height, 360, 700);
+        ClientSize = new Size(artWidth + 520, 600);
         var split = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
-        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46F));
-        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54F));
+        // Prozentangaben statt fester Pixel: skaliert sicher mit der Windows-Anzeigeskalierung
+        float artShare = 100f * artWidth / (artWidth + 520);
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, artShare));
+        split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f - artShare));
         split.Controls.Add(art, 0, 0);
         split.Controls.Add(text, 1, 0);
         Controls.Add(split);
