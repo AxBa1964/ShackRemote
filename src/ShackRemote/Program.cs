@@ -16,6 +16,7 @@ internal static class Program
     ///   /agent                - Server-Agent als SYSTEM in der Benutzersitzung (startet der Dienst)
     ///   /dienst-installieren  - Dienst einrichten (braucht Adminrechte; Knopf im Server-Fenster)
     ///   /dienst-entfernen     - Dienst entfernen (braucht Adminrechte; Knopf im Server-Fenster)
+    ///   /encoder=X            - Test: Encoder erzwingen (qsv, nvenc, amf, cpu), ohne Rückfall
     /// </summary>
     [STAThread]
     private static int Main(string[] args)
@@ -46,6 +47,11 @@ internal static class Program
                 return 1;
             }
         }
+
+        // Test: Encoder erzwingen, z. B. /encoder=nvenc
+        var encoderArg = args.FirstOrDefault(a => a.StartsWith("/encoder=", StringComparison.OrdinalIgnoreCase));
+        if (encoderArg is not null)
+            ShackRemote.Core.Media.ScreenEncoder.Forced = ShackRemote.Core.Media.ScreenEncoder.Parse(encoderArg["/encoder=".Length..]);
 
         bool agent = Has("/agent");
         if (agent)

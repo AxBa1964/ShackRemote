@@ -181,6 +181,18 @@ public sealed unsafe class ScreenEncoder : IDisposable
     /// <summary>Gewählter Encoder (nach dem Start).</summary>
     public EncoderKind Kind { get; private set; }
 
+    /// <summary>Zum Testen erzwungener Encoder (Startparameter /encoder=qsv|nvenc|amf|cpu), sonst null.</summary>
+    public static EncoderKind? Forced { get; set; }
+
+    public static EncoderKind? Parse(string? text) => text?.ToLowerInvariant() switch
+    {
+        "qsv" => EncoderKind.IntelQuickSync,
+        "nvenc" => EncoderKind.NvidiaNvenc,
+        "amf" => EncoderKind.AmdAmf,
+        "cpu" or "software" or "x264" => EncoderKind.Software,
+        _ => null,
+    };
+
     /// <summary>Je Grafikkarte der zuletzt funktionierende Encoder – wird beim nächsten Mal zuerst probiert.</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, EncoderKind> Working = new();
 
@@ -188,6 +200,12 @@ public sealed unsafe class ScreenEncoder : IDisposable
     {
         var order = Candidates(_monitor.Vendor).ToList();
         if (Working.TryGetValue(_monitor.Adapter, out var known) && order.Remove(known)) order.Insert(0, known);
+        if (Forced is EncoderKind forced)
+        {
+            // Test: nur diesen Encoder, ohne Rückfall – Fehler sollen sichtbar werden
+            order = new List<EncoderKind> { forced };
+            Log?.Invoke($"Video: Encoder erzwungen: {Describe(forced)}");
+        }
 
         Exception? last = null;
         foreach (var kind in order)
@@ -195,7 +213,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
             try
             {
                 OpenWith(kind);
-                Working[_monitor.Adapter] = kind;
+                if (Forced is null) Working[_monitor.Adapter] = kind;
                 return;
             }
             catch (Exception ex)
