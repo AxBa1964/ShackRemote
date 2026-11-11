@@ -148,10 +148,16 @@ public sealed class SessionServer : IDisposable
                     Log?.Invoke($"Monitore können nicht ermittelt werden: {ex.Message}");
                 }
 
+                List<AudioDevice>? audioDevices = null;
+                try { audioDevices = AudioCapture.ListDevices(); }
+                catch (Exception ex) { Log?.Invoke($"Tongeräte können nicht ermittelt werden: {ex.Message}"); }
+
                 await conn.SendControlAsync(new ControlMessage
                 {
                     Type = "Welcome", Name = Environment.MachineName, Version = Protocol.Version, Monitors = monitors,
+                    AudioDevices = audioDevices,
                 }, ct);
+                AudioCapture? audio = null;
                 connected = true;
                 using var video = new VideoChannel(conn, VideoFps, monitors, msg => Log?.Invoke(msg));
                 MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
@@ -189,6 +195,40 @@ public sealed class SessionServer : IDisposable
                                 await conn.SendControlAsync(new ControlMessage { Type = "Info", Text = result }, ct);
                                 break;
                             }
+                            case "StartAudio":
+                            {
+                                audio?.Dispose();
+                                audio = null;
+                                var a = new AudioCapture(m.Text ?? AudioCapture.DefaultPlaybackId);
+                                a.Log += msg => Log?.Invoke(msg);
+                                a.Failed += msg =>
+                                {
+                                    Log?.Invoke($"Ton: {msg}");
+                                    _ = conn.SendControlAsync(new ControlMessage { Type = "Info", Text = $"Ton: {msg}" });
+                                };
+                                a.PacketReady += data =>
+                                {
+                                    try { conn.SendAsync(MsgType.Audio, data).GetAwaiter().GetResult(); }
+                                    catch { /* Verbindung weg */ }
+                                };
+                                try
+                                {
+                                    a.Start();
+                                    audio = a;
+                                }
+                                catch (Exception ex)
+                                {
+                                    a.Dispose();
+                                    Log?.Invoke($"Ton kann nicht starten: {ex.Message}");
+                                    await conn.SendControlAsync(new ControlMessage { Type = "Info", Text = $"Ton kann nicht starten: {ex.Message}" }, ct);
+                                }
+                                break;
+                            }
+                            case "StopAudio":
+                                audio?.Dispose();
+                                audio = null;
+                                Log?.Invoke("Ton gestoppt");
+                                break;
                             case "RequestKeyframe":
                                 video.RequestKeyframe();
                                 break;
@@ -202,6 +242,7 @@ public sealed class SessionServer : IDisposable
                 finally
                 {
                     video.Stop();
+                    audio?.Dispose();
                     InputInjector.ReleaseAll();
                 }
             }

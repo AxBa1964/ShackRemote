@@ -26,11 +26,13 @@ public sealed class SessionClient : IAsyncDisposable
     public event Action<int>? VideoReset;            // Monitor
     public event Action<int, int, string?>? VideoInfo;   // Breite, Höhe, Encoder
     public event Action<string>? VideoError;
+    public event Action<byte[]>? AudioData;          // Opus-Paket
     public event Action<string>? Info;              // Rückmeldung des Servers (z. B. "Strg+Alt+Entf ausgelöst")
 
     public string ServerName { get; private set; } = "";
     public string ServerFingerprint { get; private set; } = "";
     public List<MonitorInfo> Monitors { get; private set; } = new();
+    public List<AudioDevice> AudioDevices { get; private set; } = new();
 
     public SessionClient(X509Certificate2 cert)
     {
@@ -89,6 +91,7 @@ public sealed class SessionClient : IAsyncDisposable
             throw new InvalidDataException($"Unerwartete Antwort: {m.Type}");
         ServerName = m.Name ?? address.ToString();
         Monitors = m.Monitors ?? new();
+        AudioDevices = m.AudioDevices ?? new();
 
         _ = Task.Run(ReadLoopAsync);
         _ = Task.Run(PingLoopAsync);
@@ -107,6 +110,11 @@ public sealed class SessionClient : IAsyncDisposable
                 {
                     if (payload.Length > 1)
                         VideoData?.Invoke(payload[1..], (payload[0] & VideoPacket.KeyFlag) != 0);
+                    continue;
+                }
+                if (type == MsgType.Audio)
+                {
+                    AudioData?.Invoke(payload);
                     continue;
                 }
                 if (type != MsgType.Control) continue;
@@ -168,6 +176,13 @@ public sealed class SessionClient : IAsyncDisposable
     /// <summary>Einfacher Befehl an den Server, z. B. "SendSas" oder "Lock".</summary>
     public Task SendCommandAsync(string type) =>
         _conn!.SendControlAsync(new ControlMessage { Type = type }, _cts.Token);
+
+    /// <summary>Ton vom Server anfordern (Geräte-Id, "" = Standard-Wiedergabe) bzw. abschalten.</summary>
+    public Task StartAudioAsync(string deviceId) =>
+        _conn!.SendControlAsync(new ControlMessage { Type = "StartAudio", Text = deviceId }, _cts.Token);
+
+    public Task StopAudioAsync() =>
+        _conn!.SendControlAsync(new ControlMessage { Type = "StopAudio" }, _cts.Token);
 
     public Task RequestKeyframeAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);

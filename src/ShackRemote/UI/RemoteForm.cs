@@ -19,6 +19,8 @@ public sealed class RemoteForm : Form
     private readonly System.Windows.Forms.Timer _statsTimer = new() { Interval = 1000 };
 
     private VideoRenderer? _renderer;
+    private AudioPlayer? _audio;
+    private readonly ComboBox _audioSource;
     private MonitorInfo? _current;
     private long _bytes;
     private KeyboardHook? _keyboard;
@@ -83,6 +85,20 @@ public sealed class RemoteForm : Form
         toolbar.Controls.Add(sas);
         toolbar.Controls.Add(lockButton);
 
+        // --- Ton: Quelle beim Shack-PC wählen ------------------------------------------------
+        _audioSource = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 260,
+            Margin = new Padding(18, 5, 3, 3),
+        };
+        _audioSource.Items.Add(new AudioChoice(null, "🔇 Ton aus"));
+        foreach (var d in session.AudioDevices)
+            _audioSource.Items.Add(new AudioChoice(d.Id, (d.Kind == "Aufnahme" ? "🎙 " : "🔊 ") + d.Name));
+        tips.SetToolTip(_audioSource,
+            "Tonquelle beim Shack-PC: 🔊 = was dort abgespielt wird, 🎙 = Aufnahmegerät (z. B. USB-Soundkarte des Funkgeräts)");
+        toolbar.Controls.Add(_audioSource);
+
         _info = LayoutKit.MakeLabel("");
         _info.Margin = new Padding(12, 9, 3, 3);
         toolbar.Controls.Add(_info);
@@ -99,6 +115,7 @@ public sealed class RemoteForm : Form
         _session.VideoError += OnVideoError;
         _session.RoundTripMeasured += OnRtt;
         _session.Info += OnInfo;
+        _session.AudioData += OnAudioData;
 
         _resizeTimer.Tick += (_, _) => { _resizeTimer.Stop(); _renderer?.Resize(_video.ClientSize.Width, _video.ClientSize.Height); };
         _video.Resize += (_, _) => { _resizeTimer.Stop(); _resizeTimer.Start(); };
@@ -127,6 +144,9 @@ public sealed class RemoteForm : Form
             }
             StartRenderer();
             _statsTimer.Start();
+            SelectRememberedAudio();
+            _audioSource.SelectedIndexChanged += async (_, _) => await ApplyAudioAsync();
+            await ApplyAudioAsync();
             var first = list.FirstOrDefault(m => m.Primary) ?? list[0];
             await SwitchMonitorAsync(first);
         };
@@ -142,6 +162,9 @@ public sealed class RemoteForm : Form
             _session.VideoError -= OnVideoError;
             _session.RoundTripMeasured -= OnRtt;
             _session.Info -= OnInfo;
+            _session.AudioData -= OnAudioData;
+            _audio?.Dispose();
+            _audio = null;
             var r = _renderer;
             _renderer = null;
             _video.Renderer = null;
@@ -210,6 +233,53 @@ public sealed class RemoteForm : Form
 
     private void OnRtt(double ms) => _lastRtt = ms;
 
+    private sealed record AudioChoice(string? Id, string Text)
+    {
+        public override string ToString() => Text;
+    }
+
+    private void SelectRememberedAudio()
+    {
+        var wanted = AppSettings.Read(st => st.AudioSource);
+        int index = 0;
+        for (int i = 0; i < _audioSource.Items.Count; i++)
+            if (((AudioChoice)_audioSource.Items[i]!).Id == wanted) { index = i; break; }
+        _audioSource.SelectedIndex = index;
+    }
+
+    /// <summary>Gewählte Tonquelle beim Server anfordern und hier abspielen.</summary>
+    private async Task ApplyAudioAsync()
+    {
+        var choice = _audioSource.SelectedItem as AudioChoice;
+        AppSettings.Update(st => st.AudioSource = choice?.Id);
+        try
+        {
+            if (choice?.Id is null)
+            {
+                await _session.StopAudioAsync();
+                _audio?.Dispose();
+                _audio = null;
+                return;
+            }
+            if (_audio is null)
+            {
+                var player = new AudioPlayer();
+                player.Log += msg => Ui(() => Log?.Invoke(msg));
+                player.Start();
+                _audio = player;
+            }
+            await _session.StartAudioAsync(choice.Id);
+            Log?.Invoke($"Ton angefordert: {choice.Text}");
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"Ton nicht möglich: {ex.Message}");
+        }
+        _video.Focus();
+    }
+
+    private void OnAudioData(byte[] data) => _audio?.Submit(data);
+
     private void OnInfo(string text) => Ui(() => Log?.Invoke($"Shack-PC: {text}"));
 
     private async Task CommandAsync(string type)
@@ -230,7 +300,8 @@ public sealed class RemoteForm : Form
         _info.Text = $"{Label(_current)} ({src})   {decoded} fps dekodiert / {shown} angezeigt   " +
                      $"{bytes * 8 / 1000} kbit/s   Ping {_lastRtt:F0} ms" +
                      (resync > 0 ? $"   Neusync {resync}×" : "") +
-                     (_encoder.Length > 0 ? $"   {_encoder}" : "");
+                     (_encoder.Length > 0 ? $"   {_encoder}" : "") +
+                     (_audio is not null ? $"   Ton-Puffer {_audio.Buffered.TotalMilliseconds:F0} ms" : "");
     }
 
     // ---- Eingabe ------------------------------------------------------------------------------

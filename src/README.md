@@ -1,5 +1,15 @@
 # ShackRemote – Quellcode
 
+## Ton (Stand 0.7.0)
+
+- **Server:** Tonquelle wählbar: Wiedergabegerät per Loopback (was der Shack-PC abspielt) oder Aufnahmegerät
+  (z. B. „USB Audio CODEC“ des Funkgeräts, geteilter Modus – WSJT-X kann parallel lesen). Umrechnung auf
+  48 kHz Stereo, Opus (`libopus`, `lowdelay`, 10-ms-Pakete, 96 kbit/s), Kanal `MsgType.Audio`.
+- **Client:** Auswahlfeld in der Leiste (🔇 aus / 🔊 Wiedergabe / 🎙 Aufnahme), Wahl wird gemerkt.
+  Opus-Dekodierung, Wiedergabe per WASAPI; Puffer über 250 ms wird verworfen (Verzögerung bleibt klein).
+- **Einschränkungen:** Im Dienstbetrieb (SYSTEM) noch ungetestet, ob dieselben Geräte sichtbar sind; Geräte im
+  Exklusivmodus anderer Programme sind gesperrt; kein Mikrofon-Rückkanal (nicht gewünscht).
+
 ## Andere PCs: Grafikkarten und Encoder (Stand 0.6.0)
 
 - **Alle Grafikkarten** werden nach Monitoren abgefragt (z. B. Prozessorgrafik + Steckkarte). Jeder Monitor wird auf

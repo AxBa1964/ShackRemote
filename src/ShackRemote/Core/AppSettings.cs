@@ -17,6 +17,9 @@ public sealed class AppSettings
     /// <summary>Server: gekoppelte Clients.</summary>
     public List<TrustedClient> TrustedClients { get; set; } = new();
 
+    /// <summary>Client: gewählte Tonquelle beim Server (Geräte-Id, "" = Standard-Wiedergabe, null = Ton aus).</summary>
+    public string? AudioSource { get; set; } = "";
+
     /// <summary>Client: bekannte (gekoppelte) Server.</summary>
     public List<KnownServer> KnownServers { get; set; } = new();
 

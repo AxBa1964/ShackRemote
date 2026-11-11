@@ -30,7 +30,7 @@ public enum MsgType : byte
 
 /// <summary>
 /// Steuernachricht (JSON). Type: Hello, PairRequired, PairProof, PairResult, Welcome (Monitors), Ping, Pong,
-/// StartVideo (Monitor = DXGI-Ausgang), StopVideo, RequestKeyframe, VideoReset (Monitor), VideoInfo (Width, Height), VideoError.
+/// StartVideo (Monitor = DXGI-Ausgang), StopVideo, StartAudio (Text = Geräte-Id), StopAudio, RequestKeyframe, VideoReset (Monitor), VideoInfo (Width, Height), VideoError.
 /// </summary>
 public sealed class ControlMessage
 {
@@ -45,6 +45,15 @@ public sealed class ControlMessage
     public int Width { get; set; }
     public int Height { get; set; }
     public List<MonitorInfo>? Monitors { get; set; }
+    public List<AudioDevice>? AudioDevices { get; set; }
+}
+
+/// <summary>Tonquelle des Servers. Id "" = Standard-Wiedergabegerät (Loopback). Kind: "Wiedergabe" oder "Aufnahme".</summary>
+public sealed class AudioDevice
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Kind { get; set; } = "";
 }
 
 /// <summary>
