@@ -183,9 +183,9 @@ public sealed class ClientForm : Form
 
         try
         {
-            await session.ConnectAsync(address, expectedFingerprint, serverShort => Task.FromResult(InputDialog.Ask(this,
+            await session.ConnectAsync(address, expectedFingerprint, serverShort => Task.FromResult(InputDialog.AskCode(this,
                 "Kopplung",
-                "Im Server-Fenster wird jetzt ein 6-stelliger Code angezeigt. Bitte hier eingeben und mit Enter bestätigen.\n\n" +
+                "Im Server-Fenster wird jetzt ein 6-stelliger Code angezeigt. Bitte hier eingeben – mit oder ohne Leerzeichen – und mit Enter bestätigen.\n\n" +
                 $"Zertifikat des Servers: {serverShort}")));
 
             _session = session;

@@ -60,6 +60,43 @@ public sealed class InputDialog : Form
         ResumeLayout(true);
     }
 
+    /// <summary>
+    /// Eingabe des 6-stelligen Kopplungscodes: nur Ziffern, Leerzeichen nach der 3. Ziffer kommt von selbst
+    /// (wie im Server-Fenster "123 456"), OK erst bei 6 Ziffern. Eingefügter Text wird auf Ziffern bereinigt.
+    /// Rückgabe: nur die 6 Ziffern, oder null bei Abbruch.
+    /// </summary>
+    public static string? AskCode(IWin32Window owner, string title, string prompt)
+    {
+        using var dlg = new InputDialog(title, prompt);
+        var input = dlg._input;
+        var ok = (Button)dlg.AcceptButton!;
+        input.TextAlign = HorizontalAlignment.Center;
+        input.Font = new Font("Segoe UI Semibold", 20F);
+        input.PlaceholderText = "123 456";
+        ok.Enabled = false;
+
+        bool busy = false;
+        input.KeyPress += (_, e) => { if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar)) e.Handled = true; };
+        input.TextChanged += (_, _) =>
+        {
+            if (busy) return;
+            busy = true;
+            var digits = new string(input.Text.Where(char.IsAsciiDigit).Take(6).ToArray());
+            var formatted = digits.Length > 3 ? digits[..3] + " " + digits[3..] : digits;
+            if (input.Text != formatted)
+            {
+                input.Text = formatted;
+                input.SelectionStart = formatted.Length;
+            }
+            ok.Enabled = digits.Length == 6;
+            busy = false;
+        };
+
+        return dlg.ShowDialog(owner) == DialogResult.OK
+            ? new string(input.Text.Where(char.IsAsciiDigit).ToArray())
+            : null;
+    }
+
     public static string? Ask(IWin32Window owner, string title, string prompt, string initial = "")
     {
         using var dlg = new InputDialog(title, prompt);

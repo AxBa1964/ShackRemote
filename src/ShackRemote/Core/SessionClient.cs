@@ -80,7 +80,7 @@ public sealed class SessionClient : IAsyncDisposable
             await _conn.SendControlAsync(new ControlMessage
             {
                 Type = "PairProof",
-                Mac = Pairing.Proof(code.Replace(" ", "").Trim(), _fingerprint, ServerFingerprint),
+                Mac = Pairing.Proof(new string(code.Where(char.IsAsciiDigit).ToArray()), _fingerprint, ServerFingerprint),
             }, ct);
             var result = await _conn.ReadControlAsync(ct);
             if (!result.Ok)
