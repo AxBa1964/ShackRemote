@@ -23,6 +23,6 @@ if not exist "%FFMPEG%" set "FFMPEG=ffmpeg"
 echo Sende Monitor %MON% mit %FPS% fps an %IP%:5000 ...
 "%FFMPEG%" -hide_banner -init_hw_device d3d11va:,vendor_id=0x8086 ^
   -filter_complex ddagrab=output_idx=%MON%:framerate=%FPS%,hwmap=derive_device=qsv,format=qsv ^
-  -c:v h264_qsv -global_quality 20 ^
+  -c:v h264_qsv -global_quality 20 -async_depth 1 -bf 0 -g 60 ^
   -f mpegts "udp://%IP%:5000?pkt_size=1316"
 pause

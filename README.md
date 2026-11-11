@@ -15,7 +15,7 @@ Ausführliches Machbarkeitskonzept: [Claude-Dokument](https://claude.ai/artifact
 
 | Rechner | Hardware | Rolle |
 | --- | --- | --- |
-| Shack-PC | Intel N100, 16 GB RAM, Intel UHD Graphics (Quick Sync), 3 Monitore 1920 × ? | Server |
+| Shack-PC | Intel N100, 16 GB RAM, Intel UHD Graphics (Quick Sync), 3 Monitore 1920 × 1080 | Server |
 | Laptop | Core i9, 32 GB RAM | Client |
 
 Beide Windows 11. Technik: C# / .NET 10, veröffentlicht als Self-contained Single File.
@@ -24,7 +24,7 @@ Beide Windows 11. Technik: C# / .NET 10, veröffentlicht als Self-contained Sing
 
 | Stufe | Inhalt | Status |
 | --- | --- | --- |
-| 0 | Machbarkeitstest mit FFmpeg: Aufnahme + Quick Sync auf dem N100, Latenz zum Laptop | **offen** – siehe [`tools/stufe0`](tools/stufe0/README.md) |
+| 0 | Machbarkeitstest mit FFmpeg: Aufnahme + Quick Sync auf dem N100, Latenz zum Laptop | **erledigt** (11.11.2026) – siehe [`tools/stufe0`](tools/stufe0/README.md) |
 | 1a | Gerüst: Rollenwahl, Adresserkennung, Server-Suche, TLS, Pairing | offen |
 | 1b | Bild: DXGI-Aufnahme, H.264 per Quick Sync, Anzeige im Client | offen |
 | 1c | Bedienung und Ton: Maus, Tastatur, Monitorleiste 1/2/3, WASAPI/Opus | offen |

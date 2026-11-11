@@ -12,5 +12,6 @@ if not exist "%FFPLAY%" set "FFPLAY=ffplay"
 
 echo Warte auf Bild an UDP-Port 5000 ...
 "%FFPLAY%" -hide_banner -fflags nobuffer -flags low_delay -framedrop ^
+  -probesize 32 -analyzeduration 0 -sync ext ^
   -window_title "ShackRemote Stufe 0" "udp://0.0.0.0:5000"
 pause

@@ -39,11 +39,30 @@ Danach die `.mkv` am Laptop ansehen: Ist kleine Schrift lesbar?
 
 ## Messprotokoll
 
-| Test | Monitor | fps | Funk-Software an? | fps erreicht | CPU % | Video Encode % | Latenz ms | Schrift lesbar? |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 0 | 60 | nein | | | | – | |
-| 1 | 0 | 60 | ja | | | | – | |
-| 2 | 0 | 60 | ja | | | | | |
+Ergebnisse vom 11.11.2026 (Shack-PC Intel N100, FFmpeg 9.0.2 gyan.dev full, Monitor 1920 × 1080, WLAN):
+
+| Test | Bildinhalt | fps erreicht | speed | Bitrate | GPU 3D | CPU Mittel / Max | RAM |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 lokal | ruhig | 56 | 0,981x | 630 kbit/s | kurz grob 10–20 % | – | 83 % |
+| 1 lokal | ruhig | 57 | 0,981x | 457 kbit/s | ca. 20–30 % | – | 85 % |
+| 1 lokal | mit Bewegung | 54 (3 verworfen) | 0,98x | 975 kbit/s | ca. 20–30 % | – | 87 % |
+| 2 Stream | Monitor 1 | – | – | – | – | 49,6 % / 91 % | 81 % |
+| Vergleich | ohne Stream | – | – | – | – | 41,9 % / 95 % | 81 % |
+
+- Anteil Aufnahme + Kodierung + Versand an der CPU: **ca. 8 Prozentpunkte**. Die Spitzen über 90 % entstehen auch ohne Stream.
+- Kodierung erscheint im Task-Manager unter „Video Decode“ (vermutlich gemeinsame Video-Einheit der Intel-Grafik).
+- Ping Shack-PC → Laptop über WLAN: 5–12 ms.
+- Gefühlte Latenz mit Standardeinstellungen: unter 1 s, aber bei Maus und Tippen spürbar.
+  Mit `-async_depth 1 -bf 0 -g 60` (Server) und `-probesize 32 -analyzeduration 0 -sync ext` (Client): spürbar schneller.
+  Diese Einstellungen sind jetzt in den Skripten.
+
+**Lehren für ShackRemote**
+
+- `udp://@:5000` bindet unter Windows nur an `[::]` (IPv6) – IPv4 muss ausdrücklich gebunden werden (`0.0.0.0` bzw. die konkrete Adresse).
+- Auf beiden Rechnern läuft die Bitdefender-Firewall; für ShackRemote werden Ausnahmen nötig.
+- Ende-zu-Ende-Latenz wird in Stufe 1b per Zeitstempel im Programm gemessen.
+
+**Bewertung:** Machbarkeit bestätigt – weiter mit Stufe 1a.
 
 **Bewertung:** Erreicht der N100 stabil 60 fps (oder zumindest 30 fps) bei moderater CPU-Last und
 liegt die Latenz deutlich unter ca. 150 ms, ist der Kern von ShackRemote machbar und es geht mit
