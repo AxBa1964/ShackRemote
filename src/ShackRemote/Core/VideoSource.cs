@@ -68,6 +68,8 @@ public sealed partial class VideoSource : IDisposable
     {
         var ct = _cts.Token;
         var buffer = new byte[256 * 1024];
+        long bytes = 0, chunks = 0;
+        var report = Stopwatch.StartNew();
         try
         {
             var stdout = _process!.StandardOutput.BaseStream;
@@ -76,6 +78,13 @@ public sealed partial class VideoSource : IDisposable
                 int n = await stdout.ReadAsync(buffer, ct);
                 if (n == 0) break;
                 await _conn.SendAsync(MsgType.Video, buffer.AsMemory(0, n), ct);
+                bytes += n;
+                chunks++;
+                if (report.Elapsed >= TimeSpan.FromSeconds(5))
+                {
+                    _log($"Video: {bytes / 1024} KB in {chunks} Paketen gesendet ({bytes * 8 / 1000 / report.Elapsed.TotalSeconds:F0} kbit/s)");
+                    bytes = 0; chunks = 0; report.Restart();
+                }
             }
             if (!ct.IsCancellationRequested)
                 _log("Video: ffmpeg wurde beendet (siehe Meldungen oben).");

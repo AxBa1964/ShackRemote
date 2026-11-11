@@ -14,7 +14,7 @@ namespace ShackRemote.Core;
 /// </summary>
 public sealed class VideoDecoder : IDisposable
 {
-    private static readonly TimeSpan MaxQueueAge = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaxQueueAge = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan Warmup = TimeSpan.FromSeconds(1);   // Prozessstart abwarten, bevor Verzögerung gemessen wird
     private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(2);
 
@@ -83,8 +83,10 @@ public sealed class VideoDecoder : IDisposable
             foreach (var (data, time) in _queue.GetConsumingEnumerable(_cts.Token))
             {
                 bool warm = firstWrite != 0 && Stopwatch.GetElapsedTime(firstWrite) > Warmup;
-                if (!dropping && warm && Stopwatch.GetElapsedTime(time) > MaxQueueAge)
+                var age = Stopwatch.GetElapsedTime(time);
+                if (!dropping && warm && age > MaxQueueAge)
                 {
+                    Log?.Invoke($"Decoder: {age.TotalMilliseconds:F0} ms Rückstand ({_queue.Count} Pakete wartend) – verwerfe, fordere neuen Strom an");
                     dropping = true;
                     dropSince = Stopwatch.GetTimestamp();
                     Interlocked.Increment(ref _drops);
@@ -97,11 +99,12 @@ public sealed class VideoDecoder : IDisposable
                     offset = FindSps(data);
                     if (offset < 0)
                     {
-                        if (Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1))
-                            RequestKeyframe(ref lastRequest);  // Start ohne SPS: einmal nachfordern
+                        if (Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1) && RequestKeyframe(ref lastRequest))
+                            Log?.Invoke($"Decoder: seit {Stopwatch.GetElapsedTime(dropSince).TotalSeconds:F1} s kein Schlüsselbild im Datenstrom – fordere neuen Strom an");
                         continue;
                     }
                     dropping = false;                          // sauberer Neueinstieg
+                    Log?.Invoke($"Decoder: Einstieg bei Schlüsselbild nach {Stopwatch.GetElapsedTime(dropSince).TotalMilliseconds:F0} ms");
                     if (firstWrite == 0) firstWrite = Stopwatch.GetTimestamp();
                 }
 
@@ -115,11 +118,12 @@ public sealed class VideoDecoder : IDisposable
         }
     }
 
-    private void RequestKeyframe(ref long lastRequest)
+    private bool RequestKeyframe(ref long lastRequest)
     {
-        if (lastRequest != 0 && Stopwatch.GetElapsedTime(lastRequest) < RequestInterval) return;
+        if (lastRequest != 0 && Stopwatch.GetElapsedTime(lastRequest) < RequestInterval) return false;
         lastRequest = Stopwatch.GetTimestamp();
         KeyframeNeeded?.Invoke();
+        return true;
     }
 
     /// <summary>Sucht den Beginn einer SPS-Einheit (NAL-Typ 7, Startcode 00 00 01). -1 = nicht gefunden.</summary>
@@ -136,12 +140,14 @@ public sealed class VideoDecoder : IDisposable
     private void ReadFrames()
     {
         var frame = new byte[Width * Height * 4];
+        long frames = 0;
         try
         {
             var stdout = _process.StandardOutput.BaseStream;
             while (!_cts.IsCancellationRequested)
             {
                 stdout.ReadExactly(frame);
+                if (++frames == 1) Log?.Invoke($"Decoder: erstes Bild ({Width} × {Height})");
                 FrameReady?.Invoke(frame, Width, Height);
             }
         }
