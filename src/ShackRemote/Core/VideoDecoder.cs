@@ -30,6 +30,9 @@ public sealed class VideoDecoder : IDisposable
     public event Action<byte[], int, int>? FrameReady;
     public event Action<string>? Log;
 
+    /// <summary>Seit über 1 s kein Neueinstieg möglich (kein SPS im Datenstrom) – frischen Datenstrom anfordern.</summary>
+    public event Action? KeyframeNeeded;
+
     public VideoDecoder(int width, int height)
     {
         Width = width;
@@ -66,7 +69,10 @@ public sealed class VideoDecoder : IDisposable
 
     private void WriteLoop()
     {
-        bool dropping = false;
+        // Ein neuer Decoder wartet immer zuerst auf SPS – Restdaten eines alten Datenstroms werden verworfen.
+        bool dropping = true;
+        long dropSince = Stopwatch.GetTimestamp();
+        bool keyframeRequested = false;
         try
         {
             var stdin = _process.StandardInput.BaseStream;
@@ -75,6 +81,8 @@ public sealed class VideoDecoder : IDisposable
                 if (!dropping && Stopwatch.GetElapsedTime(time) > MaxQueueAge)
                 {
                     dropping = true;
+                    dropSince = Stopwatch.GetTimestamp();
+                    keyframeRequested = false;
                     Interlocked.Increment(ref _drops);
                 }
 
@@ -82,7 +90,15 @@ public sealed class VideoDecoder : IDisposable
                 if (dropping)
                 {
                     offset = FindSps(data);
-                    if (offset < 0) continue;        // weiter verwerfen
+                    if (offset < 0)
+                    {
+                        if (!keyframeRequested && Stopwatch.GetElapsedTime(dropSince) > TimeSpan.FromSeconds(1))
+                        {
+                            keyframeRequested = true;
+                            KeyframeNeeded?.Invoke();
+                        }
+                        continue;                    // weiter verwerfen
+                    }
                     dropping = false;                // ab hier sauberer Neueinstieg
                 }
 

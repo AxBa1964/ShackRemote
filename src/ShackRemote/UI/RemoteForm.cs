@@ -109,6 +109,8 @@ public sealed class RemoteForm : Form
         for (int i = 0; i < _monitorButtons.Length; i++)
             _monitorButtons[i].Font = new Font(Font, i == monitor ? FontStyle.Bold : FontStyle.Regular);
         Log?.Invoke($"Monitor {monitor + 1} angefordert");
+        _video.Clear();
+        RestartDecoder();
         try
         {
             await _session.StartVideoAsync(monitor);
@@ -127,12 +129,10 @@ public sealed class RemoteForm : Form
         _decoder?.Write(data);
     }
 
-    private void OnVideoReset(int monitor) => Ui(() =>
+    private void OnVideoReset(int monitor)
     {
-        // Neuer Datenstrom vom Server: Decoder neu starten, damit er sauber am Anfang einsteigt.
-        _video.Clear();
-        RestartDecoder();
-    });
+        // Der Decoder wurde vor der Anforderung bereits neu gestartet und wartet auf den Anfang des neuen Datenstroms.
+    }
 
     private void OnVideoInfo(int width, int height) => Ui(() =>
     {
@@ -140,7 +140,7 @@ public sealed class RemoteForm : Form
         _sourceWidth = width;
         _sourceHeight = height;
         Log?.Invoke($"Shack-Monitor {_monitor + 1}: {width} × {height}");
-        if (changed) RestartDecoder();
+        if (changed) _ = RestartWithFreshStreamAsync();
     });
 
     private void OnVideoError(string message) => Ui(() =>
@@ -158,8 +158,6 @@ public sealed class RemoteForm : Form
         var area = _video.ClientSize;
         if (area.Width < 16 || area.Height < 16) return new Size(320, 180);
         double scale = Math.Min((double)area.Width / _sourceWidth, (double)area.Height / _sourceHeight);
-        // Nicht über die Originalgröße hinaus vergrößern: kostet nur Rechenzeit und bringt keine Schärfe.
-        scale = Math.Min(scale, 1.0);
         int w = Math.Max(64, (int)(_sourceWidth * scale)) & ~1;   // gerade Werte
         int h = Math.Max(64, (int)(_sourceHeight * scale)) & ~1;
         return new Size(w, h);
@@ -169,7 +167,18 @@ public sealed class RemoteForm : Form
     {
         var target = TargetSize();
         if (_decoder is null || _decoder.Width != target.Width || _decoder.Height != target.Height)
-            RestartDecoder();
+            _ = RestartWithFreshStreamAsync();
+    }
+
+    /// <summary>
+    /// Neuer Decoder braucht einen Datenstrom ab Anfang (der Quick-Sync-Encoder liefert die Bildparameter
+    /// offenbar nur zu Beginn). Daher den laufenden Monitor beim Server neu anfordern.
+    /// </summary>
+    private async Task RestartWithFreshStreamAsync()
+    {
+        RestartDecoder();
+        try { await _session.StartVideoAsync(_monitor); }
+        catch (Exception ex) { Log?.Invoke($"Neuanforderung fehlgeschlagen: {ex.Message}"); }
     }
 
     private void RestartDecoder()
@@ -185,6 +194,12 @@ public sealed class RemoteForm : Form
                 _video.UpdateFrame(frame, w, h);
             };
             d.Log += msg => Ui(() => Log?.Invoke(msg));
+            d.KeyframeNeeded += () => Ui(async () =>
+            {
+                if (!ReferenceEquals(_decoder, d)) return;
+                Log?.Invoke("Bild hängt – fordere frischen Datenstrom an");
+                try { await _session.StartVideoAsync(_monitor); } catch { }
+            });
             _decoder = d;
         }
         catch (Exception ex)
