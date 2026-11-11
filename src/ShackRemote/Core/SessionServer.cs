@@ -158,6 +158,7 @@ public sealed class SessionServer : IDisposable
                     AudioDevices = audioDevices,
                 }, ct);
                 AudioCapture? audio = null;
+                using var files = new FileService(conn, msg => Log?.Invoke(msg));
                 connected = true;
                 using var video = new VideoChannel(conn, VideoFps, monitors, msg => Log?.Invoke(msg));
                 MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
@@ -168,6 +169,11 @@ public sealed class SessionServer : IDisposable
                     while (!ct.IsCancellationRequested)
                     {
                         var (type, payload) = await conn.ReadAsync(ct);
+                        if (type == MsgType.File)
+                        {
+                            await files.HandleAsync(payload);
+                            continue;
+                        }
                         if (type == MsgType.Input)
                         {
                             try { InputInjector.Apply(payload, shown); }

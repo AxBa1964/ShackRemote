@@ -20,6 +20,8 @@ public sealed class RemoteForm : Form
 
     private VideoRenderer? _renderer;
     private AudioPlayer? _audio;
+    private FileForm? _files;
+    private RemoteFs? _remoteFs;
     private readonly ComboBox _audioSource;
     private MonitorInfo? _current;
     private long _bytes;
@@ -84,6 +86,11 @@ public sealed class RemoteForm : Form
         tips.SetToolTip(lockButton, "Shack-PC sperren (Win+L wirkt immer nur auf den Laptop).");
         toolbar.Controls.Add(sas);
         toolbar.Controls.Add(lockButton);
+
+        var filesButton = LayoutKit.MakeButton("Dateien");
+        filesButton.Click += (_, _) => OpenFiles();
+        tips.SetToolTip(filesButton, "Dateifenster: Laptop und Shack-PC nebeneinander (kopieren, verschieben, löschen …)");
+        toolbar.Controls.Add(filesButton);
 
         // --- Ton: Quelle beim Shack-PC wählen ------------------------------------------------
         _audioSource = new ComboBox
@@ -163,6 +170,8 @@ public sealed class RemoteForm : Form
             _session.RoundTripMeasured -= OnRtt;
             _session.Info -= OnInfo;
             _session.AudioData -= OnAudioData;
+            _files?.Close();
+            _remoteFs?.Dispose();
             _audio?.Dispose();
             _audio = null;
             var r = _renderer;
@@ -276,6 +285,19 @@ public sealed class RemoteForm : Form
             Log?.Invoke($"Ton nicht möglich: {ex.Message}");
         }
         _video.Focus();
+    }
+
+    private void OpenFiles()
+    {
+        if (_files is { IsDisposed: false })
+        {
+            _files.WindowState = FormWindowState.Normal;
+            _files.Activate();
+            return;
+        }
+        _remoteFs ??= new RemoteFs(_session);
+        _files = new FileForm(_session, _remoteFs);
+        _files.Show();
     }
 
     private void OnAudioData(byte[] data) => _audio?.Submit(data);

@@ -27,6 +27,7 @@ public sealed class SessionClient : IAsyncDisposable
     public event Action<int, int, string?>? VideoInfo;   // Breite, Höhe, Encoder
     public event Action<string>? VideoError;
     public event Action<byte[]>? AudioData;          // Opus-Paket
+    public event Action<byte[]>? FileData;           // Dateizugriff (FileProtocol)
     public event Action<string>? Info;              // Rückmeldung des Servers (z. B. "Strg+Alt+Entf ausgelöst")
 
     public string ServerName { get; private set; } = "";
@@ -112,6 +113,11 @@ public sealed class SessionClient : IAsyncDisposable
                         VideoData?.Invoke(payload[1..], (payload[0] & VideoPacket.KeyFlag) != 0);
                     continue;
                 }
+                if (type == MsgType.File)
+                {
+                    FileData?.Invoke(payload);
+                    continue;
+                }
                 if (type == MsgType.Audio)
                 {
                     AudioData?.Invoke(payload);
@@ -183,6 +189,8 @@ public sealed class SessionClient : IAsyncDisposable
 
     public Task StopAudioAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StopAudio" }, _cts.Token);
+
+    public Task SendFileAsync(byte[] payload) => _conn!.SendAsync(MsgType.File, payload, _cts.Token);
 
     public Task RequestKeyframeAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);

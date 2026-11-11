@@ -26,6 +26,7 @@ public enum MsgType : byte
     Video = 2,
     Audio = 3,
     Input = 4,
+    File = 5,
 }
 
 /// <summary>

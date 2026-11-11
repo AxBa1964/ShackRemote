@@ -1,6 +1,6 @@
 namespace ShackRemote.UI;
 
-/// <summary>Einfacher Eingabedialog (Kopplungscode). Größe passt sich dem Text an.</summary>
+/// <summary>Einfacher Eingabedialog (Kopplungscode, Ordnername …). Größe passt sich dem Text an.</summary>
 public sealed class InputDialog : Form
 {
     private readonly TextBox _input;
@@ -60,9 +60,11 @@ public sealed class InputDialog : Form
         ResumeLayout(true);
     }
 
-    public static string? Ask(IWin32Window owner, string title, string prompt)
+    public static string? Ask(IWin32Window owner, string title, string prompt, string initial = "")
     {
         using var dlg = new InputDialog(title, prompt);
+        dlg._input.Text = initial;
+        dlg._input.SelectAll();
         return dlg.ShowDialog(owner) == DialogResult.OK ? dlg._input.Text : null;
     }
 }

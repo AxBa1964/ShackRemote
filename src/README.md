@@ -1,5 +1,17 @@
 # ShackRemote – Quellcode
 
+## Dateien (Stand 0.8.0)
+
+- **Dateifenster** (Knopf „Dateien“ im Fernsteuerungsfenster): links Laptop, rechts Shack-PC, jeweils Laufwerksübersicht,
+  Pfadzeile, Liste. Kopieren/Verschieben zwischen den Seiten (F5/F6), Neuer Ordner (F7), Umbenennen (F2), Löschen (Entf),
+  Rücktaste = eine Ebene höher. Ziehen zwischen den Seiten kopiert, auf einen Ordner derselben Seite verschiebt
+  (mit Strg kopiert), aus dem Windows-Explorer kopiert bzw. lädt hoch; von der Laptop-Seite in den Explorer geht auch.
+- **Übertragung** über die bestehende TLS-Verbindung (`MsgType.File`), Stücke à 64 KB, Fortschritt und Abbrechen,
+  Rückfrage beim Überschreiben (Ja / Ja, alle / Nein / Abbrechen). Verschieben löscht die Quelle erst nach dem Kopieren.
+- **Sicherheit:** Der Server greift im Namen des am Shack-PC angemeldeten Benutzers zu (auch im Dienstbetrieb).
+- **Einschränkungen:** kein Dateizugriff, solange am Shack-PC niemand angemeldet ist; Löschen endgültig (kein Papierkorb);
+  vom Shack-PC direkt in den Explorer des Laptops ziehen geht nicht; Netzlaufwerke des Benutzers im Dienstbetrieb ungeprüft.
+
 ## Ton (Stand 0.7.0)
 
 - **Server:** Tonquelle wählbar: Wiedergabegerät per Loopback (was der Shack-PC abspielt) oder Aufnahmegerät
