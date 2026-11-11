@@ -55,7 +55,7 @@ public static unsafe class FfmpegLib
     private static long _windowStart;
     private static int _windowCount;
 
-    /// <summary>Gleiche Zeilen nicht wiederholen und höchstens 20 Meldungen je 5 s weiterreichen.</summary>
+    /// <summary>Gleiche Zeilen nicht wiederholen und höchstens 60 Meldungen je 5 s weiterreichen.</summary>
     private static bool Throttle(string line)
     {
         lock (Gate)
@@ -64,7 +64,7 @@ public static unsafe class FfmpegLib
             _lastLine = line;
             long now = Environment.TickCount64;
             if (now - _windowStart > 5000) { _windowStart = now; _windowCount = 0; }
-            return ++_windowCount <= 20;
+            return ++_windowCount <= 60;
         }
     }
 

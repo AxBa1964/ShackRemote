@@ -82,7 +82,10 @@ public sealed unsafe class ScreenEncoder : IDisposable
                 var f = graph->filters[i];
                 if (f->hw_device_ctx == null) f->hw_device_ctx = ffmpeg.av_buffer_ref(device);
             }
-            FfmpegLib.Check(ffmpeg.avfilter_graph_config(graph, null), $"Bildschirmausgang {_output} öffnen");
+            // Diagnose: QSV-Einrichtung (hwmap) ausführlich protokollieren
+            ffmpeg.av_log_set_level(ffmpeg.AV_LOG_VERBOSE);
+            try { FfmpegLib.Check(ffmpeg.avfilter_graph_config(graph, null), $"Bildschirmausgang {_output} öffnen"); }
+            finally { ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING); }
 
             int width = ffmpeg.av_buffersink_get_w(sink);
             int height = ffmpeg.av_buffersink_get_h(sink);
@@ -104,7 +107,12 @@ public sealed unsafe class ScreenEncoder : IDisposable
             enc->hw_frames_ctx = ffmpeg.av_buffer_ref(ffmpeg.av_buffersink_get_hw_frames_ctx(sink));
             ffmpeg.av_opt_set(enc->priv_data, "async_depth", "1", 0);
             ffmpeg.av_opt_set(enc->priv_data, "forced_idr", "1", 0);
-            FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen");
+            Log?.Invoke($"Video: Encoder-Parameter {width}×{height}, time_base {timeBase.num}/{timeBase.den}, " +
+                        $"Format {ffmpeg.av_get_pix_fmt_name((AVPixelFormat)ffmpeg.av_buffersink_get_format(sink))}");
+            // Beim Öffnen ausführlich protokollieren, damit Quick-Sync-Fehler im Server-Protokoll stehen
+            ffmpeg.av_log_set_level(ffmpeg.AV_LOG_VERBOSE);
+            try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen"); }
+            finally { ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING); }
 
             // --- SPS/PPS vor jedes Schlüsselbild (dump_extra), damit der Client jederzeit einsteigen kann ---
             FfmpegLib.Check(ffmpeg.av_bsf_alloc(ffmpeg.av_bsf_get_by_name("dump_extra"), &bsf), "dump_extra");
