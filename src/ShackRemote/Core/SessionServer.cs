@@ -153,6 +153,7 @@ public sealed class SessionServer : IDisposable
                 }, ct);
                 connected = true;
                 ScreenEncoder? video = null;
+                MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
                 ClientConnected?.Invoke($"{name} ({remote})");
 
                 try
@@ -160,7 +161,13 @@ public sealed class SessionServer : IDisposable
                     while (!ct.IsCancellationRequested)
                     {
                         var (type, payload) = await conn.ReadAsync(ct);
-                        if (type != MsgType.Control) continue; // Eingabe folgt in Stufe 1c
+                        if (type == MsgType.Input)
+                        {
+                            try { InputInjector.Apply(payload, shown); }
+                            catch (Exception ex) { Log?.Invoke($"Eingabe fehlgeschlagen: {ex.Message}"); }
+                            continue;
+                        }
+                        if (type != MsgType.Control) continue;
                         var m = System.Text.Json.JsonSerializer.Deserialize<ControlMessage>(payload);
                         switch (m?.Type)
                         {
@@ -170,6 +177,7 @@ public sealed class SessionServer : IDisposable
                             case "StartVideo":
                                 video?.Dispose();
                                 video = StartEncoder(conn, Math.Clamp(m.Monitor, 0, 15));
+                                shown = monitors?.FirstOrDefault(mo => mo.Index == m.Monitor);
                                 break;
                             case "RequestKeyframe":
                                 video?.RequestKeyframe();
@@ -185,6 +193,7 @@ public sealed class SessionServer : IDisposable
                 finally
                 {
                     video?.Dispose();
+                    InputInjector.ReleaseAll();
                 }
             }
         }

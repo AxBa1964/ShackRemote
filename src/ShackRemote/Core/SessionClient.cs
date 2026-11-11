@@ -16,6 +16,9 @@ public sealed class SessionClient : IAsyncDisposable
     private TcpClient? _tcp;
     private SslStream? _ssl;
     private FramedConnection? _conn;
+    // Eingaben in fester Reihenfolge über einen einzigen Sender
+    private readonly System.Threading.Channels.Channel<byte[]> _input =
+        System.Threading.Channels.Channel.CreateUnbounded<byte[]>(new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
 
     public event Action<double>? RoundTripMeasured;   // Millisekunden
     public event Action<string>? Disconnected;
@@ -88,6 +91,7 @@ public sealed class SessionClient : IAsyncDisposable
 
         _ = Task.Run(ReadLoopAsync);
         _ = Task.Run(PingLoopAsync);
+        _ = Task.Run(InputLoopAsync);
     }
 
     private async Task ReadLoopAsync()
@@ -141,6 +145,23 @@ public sealed class SessionClient : IAsyncDisposable
 
     public Task StartVideoAsync(int monitor) =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StartVideo", Monitor = monitor }, _cts.Token);
+
+    /// <summary>Eingabe-Nachricht (siehe InputProtocol) einreihen; blockiert nie.</summary>
+    public void SendInput(byte[] message) => _input.Writer.TryWrite(message);
+
+    private async Task InputLoopAsync()
+    {
+        var ct = _cts.Token;
+        try
+        {
+            await foreach (var message in _input.Reader.ReadAllAsync(ct))
+                await _conn!.SendAsync(MsgType.Input, message, ct);
+        }
+        catch (Exception)
+        {
+            // Ende wird über die Leseschleife gemeldet.
+        }
+    }
 
     public Task RequestKeyframeAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);

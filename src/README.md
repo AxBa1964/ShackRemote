@@ -1,5 +1,23 @@
 # ShackRemote – Quellcode
 
+## Stufe 1c: Maus und Tastatur (Stand 0.4.0)
+
+- **Maus** über dem Bild: Bewegen, Tasten (links, rechts, Mitte, X1/X2), Rad senkrecht und waagrecht.
+  Position relativ zum gezeigten Monitor (0..65535), der Server rechnet sie auf den ganzen virtuellen Desktop um
+  und führt sie per `SendInput` aus.
+- **Tastatur** über einen globalen Tastatur-Haken (`WH_KEYBOARD_LL`), solange das Fernsteuerungsfenster vorne ist:
+  Alle Tasten gehen an den Shack-PC, auch Windows-Taste, Alt+Tab und Alt+F4. Strg+Alt+Entf geht Windows-bedingt nicht.
+- **Lokales Kürzel:** Strg+Alt+F1/F2/F3 = Monitor links/Mitte/rechts (wird nicht gesendet).
+- Fenster verliert den Fokus oder Verbindung endet: alle gedrückten Tasten werden losgelassen (nichts „klemmt“).
+- **Grenze von Windows:** Programme, die als Administrator laufen, und UAC-Abfragen nehmen keine Eingaben von einem
+  normal gestarteten ShackRemote an.
+
+| Datei | Inhalt |
+| --- | --- |
+| `Core/InputProtocol.cs` | Eingabe-Nachrichten (binär) |
+| `Core/InputInjector.cs` | Server: SendInput, Umrechnung auf den virtuellen Desktop |
+| `UI/KeyboardHook.cs` | Client: globaler Tastatur-Haken |
+
 ## Stufe 1b: Bild (Stand 0.3.0 – GPU-Pipeline im Prozess)
 
 Seit 0.3.0 läuft das Bild wie bei Moonlight/Sunshine, RustDesk und Parsec komplett **im eigenen Prozess auf der GPU**
@@ -13,7 +31,7 @@ Seit 0.3.0 läuft das Bild wie bei Moonlight/Sunshine, RustDesk und Parsec kompl
 - **Schlüsselbild auf Anforderung** (`RequestKeyframe`): Beim Einstieg, nach Rückstand oder Fehler fordert der Client ein IDR an –
   kein Encoder-Neustart mehr. Beim Größe-Ändern des Fensters wird nur die Swapchain angepasst, nichts neu gestartet.
 - **Monitorknöpfe** in derselben Reihenfolge wie beim Server (nach Lage auf dem Desktop) und danach beschriftet:
-  **Links / Mitte / Rechts**, ★ = Hauptbildschirm. **Strg+1/2/3** = Knopf 1/2/3 von links.
+  **Links / Mitte / Rechts**, ★ = Hauptbildschirm. **Strg+Alt+F1/F2/F3** = Knopf 1/2/3 von links (seit 0.4.0).
   (Die Windows-internen Nummern `\\.\DISPLAYn` weichen von denen in den Anzeigeeinstellungen ab, daher nicht verwendet.)
 - **Zwei Threads auf dem Server** (seit 0.3.1): Aufnahme und Encoder laufen parallel; ist der Encoder noch beschäftigt,
   ersetzt das neueste Bild das ältere (kein Stau, geringste Verzögerung).
