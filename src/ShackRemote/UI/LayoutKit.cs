@@ -71,7 +71,7 @@ internal static class LayoutKit
                 Application.Restart();
         };
         new ToolTip().SetToolTip(box, "Darstellung: wie Windows, hell oder dunkel");
-        var label = new Label { Text = "Darstellung", AutoSize = true, ForeColor = Theme.SubtleText, Margin = new Padding(6, 10, 0, 3) };
+        var label = new Label { Text = "Darstellung", AutoSize = true, ForeColor = Theme.SubtleText, Margin = new Padding(6, 9, 0, 3) };
         var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         row.Controls.Add(label);
         row.Controls.Add(box);

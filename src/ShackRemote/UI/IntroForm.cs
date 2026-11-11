@@ -4,7 +4,7 @@ using ShackRemote.Core;
 namespace ShackRemote.UI;
 
 /// <summary>
-/// Startfenster: links das Bild, rechts Name, Version, Urheber, Hinweis zur freien Verwendung und Haftungsausschluss.
+/// Startfenster: oben das Bild, darunter zentriert Name, Version, Urheber, Hinweis zur freien Verwendung und Haftungsausschluss.
 /// Liegt neben der Exe eine Datei "intro.png", wird sie statt der gezeichneten Szene gezeigt.
 /// Erscheint nicht im Dienstbetrieb.
 /// </summary>
@@ -34,12 +34,12 @@ public sealed class IntroForm : Form
         Control art;
         var image = LoadIntroImage();
         if (image is not null)
-            art = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, Image = image, Margin = new Padding(0), BackColor = Theme.Surface };
+            art = new PictureBox { Dock = DockStyle.Top, SizeMode = PictureBoxSizeMode.Zoom, Image = image, Margin = new Padding(0), BackColor = Color.White };
         else
-            art = new IntroArt { Dock = DockStyle.Fill, Margin = new Padding(0) };
+            art = new IntroArt { Dock = DockStyle.Top, Margin = new Padding(0) };
 
         // Größe: Breite 860, Bildhöhe nach Seitenverhältnis – aber so, dass das Fenster auf den Bildschirm passt
-        const int textHeight = 390;
+        const int textHeight = 470;   // nur Schätzung; die echte Höhe wird beim Laden gemessen
         int width = 860;
         int imageHeight = image is not null && image.Width > 0 ? width * image.Height / image.Width : 260;
         float scale = DeviceDpi / 96f;
@@ -50,6 +50,7 @@ public sealed class IntroForm : Form
             imageHeight = available;
         }
         ClientSize = new Size(width, imageHeight + textHeight);
+        art.Height = imageHeight;   // genau so hoch wie das Bild: keine leeren Streifen darüber/darunter
 
         // --- Text darunter, zentriert --------------------------------------------------------
         Label Centered(string text, Font? font = null, Color? color = null, int bottom = 2) => new()
@@ -72,7 +73,7 @@ public sealed class IntroForm : Form
             ScrollBars = ScrollBars.Vertical,
             Anchor = AnchorStyles.Top,
             Width = width - 120,
-            Height = 112,
+            Height = 150,
             Font = new Font("Segoe UI", 9F),
             TabStop = false,
             Margin = new Padding(0, 4, 0, 10),
@@ -95,24 +96,62 @@ public sealed class IntroForm : Form
             ColumnCount = 1,
             AutoSize = true,
             Padding = new Padding(24, 14, 24, 14),
-            BackColor = Theme.Window,
+            BackColor = Theme.Surface,   // gleiche Farbe wie das Fenster – kein abgesetzter Streifen
         };
         text.Controls.Add(Centered("ShackRemote", new Font("Segoe UI Semibold", 22F)));
         text.Controls.Add(Centered("Fernsteuerung für die Funkstation – Bild, Ton, Maus, Tastatur und Dateien", color: Theme.SubtleText, bottom: 8));
         text.Controls.Add(Centered($"Version {Protocol.Version}   ·   © {DateTime.Now.Year} Axel Baruschke · DK7EE", new Font("Segoe UI Semibold", 10.5F)));
         text.Controls.Add(Centered("Software zur freien Verwendung – kostenlos nutzen und weitergeben.", bottom: 6));
+        text.Controls.Add(Centered("Lizenz und Haftung", new Font("Segoe UI Semibold", 10F), Theme.SubtleText, bottom: 0));
         text.Controls.Add(license);
         text.Controls.Add(buttons);
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(art, 0, 0);
-        root.Controls.Add(text, 0, 1);
-        Controls.Add(root);
+        // Reihenfolge wichtig: zuerst Fill, dann Top – WinForms dockt in umgekehrter Reihenfolge
+        Controls.Add(text);
+        Controls.Add(art);
         ResumeLayout(true);
 
-        Shown += (_, _) => ok.Focus();
+        // Fensterhöhe an den tatsächlichen Textbedarf anpassen (Schriftgröße/DPI sind erst jetzt bekannt)
+        Load += (_, _) =>
+        {
+            int need = art.Height + text.GetPreferredSize(new Size(ClientSize.Width, 0)).Height;
+            int max = Screen.FromControl(this).WorkingArea.Height - (Height - ClientSize.Height);
+            ClientSize = new Size(ClientSize.Width, Math.Min(need, max));
+            CenterToScreen();
+        };
+
+        Shown += (_, _) =>
+        {
+            license.Select(0, 0);       // Lizenztext von oben zeigen, nicht vom Ende
+            license.ScrollToCaret();
+            ok.Focus();
+        };
+    }
+
+    /// <summary>
+    /// Schneidet einen gleichmäßig hellen Rand rund um das Bild ab (lässt 8 Pixel stehen),
+    /// damit im dunklen Design kein breiter weißer Rahmen erscheint.
+    /// </summary>
+    private static Bitmap TrimWhiteBorder(Bitmap bmp)
+    {
+        static bool Light(Color c) => c.R > 235 && c.G > 235 && c.B > 235;
+        bool RowLight(int y) { for (int x = 0; x < bmp.Width; x += 2) if (!Light(bmp.GetPixel(x, y))) return false; return true; }
+        bool ColLight(int x) { for (int y = 0; y < bmp.Height; y += 2) if (!Light(bmp.GetPixel(x, y))) return false; return true; }
+
+        int top = 0, bottom = bmp.Height - 1, left = 0, right = bmp.Width - 1;
+        while (top < bottom && RowLight(top)) top++;
+        while (bottom > top && RowLight(bottom)) bottom--;
+        while (left < right && ColLight(left)) left++;
+        while (right > left && ColLight(right)) right--;
+        const int keep = 8;
+        top = Math.Max(0, top - keep); left = Math.Max(0, left - keep);
+        bottom = Math.Min(bmp.Height - 1, bottom + keep); right = Math.Min(bmp.Width - 1, right + keep);
+        if (top == 0 && left == 0 && bottom == bmp.Height - 1 && right == bmp.Width - 1) return bmp;
+        if (right - left < bmp.Width / 2 || bottom - top < bmp.Height / 2) return bmp;   // Sicherheitsnetz
+
+        var cut = bmp.Clone(new Rectangle(left, top, right - left + 1, bottom - top + 1), bmp.PixelFormat);
+        bmp.Dispose();
+        return cut;
     }
 
     /// <summary>
@@ -124,9 +163,9 @@ public sealed class IntroForm : Form
         try
         {
             var loose = Path.Combine(AppContext.BaseDirectory, "intro.png");
-            if (File.Exists(loose)) return Image.FromFile(loose);
+            if (File.Exists(loose)) return TrimWhiteBorder(new Bitmap(loose));
             using var stream = typeof(IntroForm).Assembly.GetManifestResourceStream("ShackRemote.Assets.intro.png");
-            return stream is null ? null : new Bitmap(stream);
+            return stream is null ? null : TrimWhiteBorder(new Bitmap(stream));
         }
         catch
         {
