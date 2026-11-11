@@ -33,6 +33,9 @@ public sealed class SessionClient : IAsyncDisposable
     public string ServerName { get; private set; } = "";
     public string ServerFingerprint { get; private set; } = "";
     public List<MonitorInfo> Monitors { get; private set; } = new();
+
+    /// <summary>Server meldet geänderte Monitore (ein-/ausgesteckt). Läuft im Empfangs-Thread.</summary>
+    public event Action<List<MonitorInfo>>? MonitorsChanged;
     public List<AudioDevice> AudioDevices { get; private set; } = new();
 
     public SessionClient(X509Certificate2 cert)
@@ -132,6 +135,13 @@ public sealed class SessionClient : IAsyncDisposable
                     case "VideoInfo": VideoInfo?.Invoke(m.Width, m.Height, m.Text); break;
                     case "VideoError": VideoError?.Invoke(m.Text ?? "unbekannter Fehler"); break;
                     case "Info": Info?.Invoke(m.Text ?? ""); break;
+                    case "Monitors":
+                        if (m.Monitors is { Count: > 0 })
+                        {
+                            Monitors = m.Monitors;
+                            MonitorsChanged?.Invoke(m.Monitors);
+                        }
+                        break;
                 }
             }
         }

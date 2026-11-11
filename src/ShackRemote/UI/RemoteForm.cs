@@ -58,6 +58,8 @@ public sealed class RemoteForm : Form
     private RemoteFs? _remoteFs;
     private readonly ComboBox _audioSource;
     private MonitorInfo? _current;
+    private FlowLayoutPanel _toolbar = null!;
+    private readonly ToolTip _tips = new();
     private long _bytes;
     private KeyboardHook? _keyboard;
     private readonly HashSet<(ushort Vk, ushort Scan, bool Ext)> _keysDown = new();
@@ -78,12 +80,12 @@ public sealed class RemoteForm : Form
         MinimumSize = new Size(480, 320);
 
         // --- Werkzeugleiste: Monitore wie beim Server angeordnet ------------------------
-        var list = session.Monitors.Count > 0
-            ? session.Monitors.OrderBy(m => m.Left).ThenBy(m => m.Top).ToList()
+        var initial = session.Monitors.Count > 0
+            ? session.Monitors
             : Enumerable.Range(0, 3).Select(i => new MonitorInfo { Index = i, Display = i + 1, Width = 1920, Height = 1080 }).ToList();
 
         // Kopfleiste: links Monitore, Dateien, Ton – rechts unauffällig "…" mit Strg+Alt+Entf und Sperren
-        var toolbar = new FlowLayoutPanel
+        var toolbar = _toolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
@@ -92,28 +94,8 @@ public sealed class RemoteForm : Form
             WrapContents = false,
             Margin = new Padding(0),
         };
-        // Beschriftung nach Lage (Windows-Nummern weichen von den Anzeigeeinstellungen ab)
-        string[] names = list.Count switch
-        {
-            1 => new[] { "Monitor" },
-            2 => new[] { "Links", "Rechts" },
-            3 => new[] { "Links", "Mitte", "Rechts" },
-            _ => list.Select((_, i) => $"Monitor {i + 1}").ToArray(),
-        };
-        var tips = new ToolTip();
-        for (int pos = 0; pos < list.Count; pos++)
-        {
-            var monitor = list[pos];
-            _labels[monitor] = names[pos];
-            var b = LayoutKit.MakeButton(" " + names[pos] + (monitor.Primary ? " ★" : ""));
-            b.MinimumSize = new Size(110, 0);
-            b.TextImageRelation = TextImageRelation.ImageBeforeText;
-            b.Image = Theme.Glyph(GlyphMonitor, b, Theme.Text, 18);   // vor dem Anlegen des Fensters setzen (sonst Neuaufbau während CreateControl -> Fehler 1400)
-            b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
-            tips.SetToolTip(b, $"Strg+Alt+F{pos + 1} · {monitor.Width} × {monitor.Height}" + (monitor.Primary ? " · Hauptbildschirm" : ""));
-            _monitors.Add((monitor, b));
-            toolbar.Controls.Add(b);
-        }
+        var tips = _tips;
+        var list = BuildMonitorButtons(initial);
 
         var filesButton = LayoutKit.MakeButton(" Dateien");
         filesButton.Margin = new Padding(18, 3, 3, 6);
@@ -227,6 +209,7 @@ public sealed class RemoteForm : Form
             await ApplyAudioAsync();
             var first = list.FirstOrDefault(m => m.Primary) ?? list[0];
             await SwitchMonitorAsync(first);
+            _session.MonitorsChanged += OnMonitorsChanged;
         };
 
         FormClosing += async (_, _) =>
@@ -241,6 +224,7 @@ public sealed class RemoteForm : Form
             _session.RoundTripMeasured -= OnRtt;
             _session.Info -= OnInfo;
             _session.AudioData -= OnAudioData;
+            _session.MonitorsChanged -= OnMonitorsChanged;
             _files?.Close();
             _remoteFs?.Dispose();
             _audio?.Dispose();
@@ -464,6 +448,57 @@ public sealed class RemoteForm : Form
         _swallowUp.Clear();
         _ctrl = _alt = false;
     }
+
+    /// <summary>
+    /// Monitorknöpfe (neu) anlegen – beim Öffnen und wenn der Shack-PC geänderte Monitore meldet.
+    /// Beschriftung nach Lage von links nach rechts (Windows-Nummern weichen von den Anzeigeeinstellungen ab).
+    /// </summary>
+    private List<MonitorInfo> BuildMonitorButtons(List<MonitorInfo> monitors)
+    {
+        foreach (var (_, old) in _monitors)
+        {
+            _toolbar.Controls.Remove(old);
+            old.Dispose();
+        }
+        _monitors.Clear();
+        _labels.Clear();
+
+        var list = monitors.OrderBy(m => m.Left).ThenBy(m => m.Top).ToList();
+        string[] names = list.Count switch
+        {
+            1 => new[] { "Monitor" },
+            2 => new[] { "Links", "Rechts" },
+            3 => new[] { "Links", "Mitte", "Rechts" },
+            _ => list.Select((_, i) => $"Monitor {i + 1}").ToArray(),
+        };
+        for (int pos = 0; pos < list.Count; pos++)
+        {
+            var monitor = list[pos];
+            _labels[monitor] = names[pos];
+            var b = LayoutKit.MakeButton(" " + names[pos] + (monitor.Primary ? " ★" : ""));
+            b.MinimumSize = new Size(110, 0);
+            b.TextImageRelation = TextImageRelation.ImageBeforeText;
+            b.Image = Theme.Glyph(GlyphMonitor, _toolbar, Theme.Text, 18);   // vor dem Anlegen des Fensters setzen (sonst Neuaufbau während CreateControl -> Fehler 1400)
+            b.Click += async (_, _) => await SwitchMonitorAsync(monitor);
+            _tips.SetToolTip(b, $"Strg+Alt+F{pos + 1} · {monitor.Width} × {monitor.Height}" + (monitor.Primary ? " · Hauptbildschirm" : ""));
+            _monitors.Add((monitor, b));
+            _toolbar.Controls.Add(b);
+            _toolbar.Controls.SetChildIndex(b, pos);
+        }
+        return list;
+    }
+
+    /// <summary>Shack-PC meldet andere Monitore: Knöpfe neu, möglichst denselben Bildschirm weiter zeigen.</summary>
+    private void OnMonitorsChanged(List<MonitorInfo> monitors) => Ui(async () =>
+    {
+        var previous = _current;
+        var list = BuildMonitorButtons(monitors);
+        Log?.Invoke($"Shack-PC meldet geänderte Monitore: jetzt {list.Count}");
+        var next = (previous is null ? null : list.FirstOrDefault(m =>
+                       m.Left == previous.Left && m.Top == previous.Top && m.Width == previous.Width && m.Height == previous.Height))
+                   ?? list.FirstOrDefault(m => m.Primary) ?? list[0];
+        await SwitchMonitorAsync(next);
+    });
 
     private string Label(MonitorInfo? m) => m is not null && _labels.TryGetValue(m, out var l) ? l : "–";
 

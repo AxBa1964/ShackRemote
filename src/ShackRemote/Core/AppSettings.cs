@@ -30,12 +30,17 @@ public sealed class AppSettings
     /// <summary>Client: bekannte (gekoppelte) Server.</summary>
     public List<KnownServer> KnownServers { get; set; } = new();
 
+    // Reihenfolge wichtig: statische Felder werden von oben nach unten belegt.
+
+    /// <summary>Ordner der Einstellungen des angemeldeten Benutzers (%APPDATA%\ShackRemote).</summary>
+    public static string UserFolder { get; } =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShackRemote");
+
     /// <summary>
     /// Normal %APPDATA%\ShackRemote. Im Dienstbetrieb (Agent als SYSTEM) C:\ProgramData\ShackRemote,
     /// siehe <see cref="UseMachineFolder"/>.
     /// </summary>
-    public static string Folder { get; private set; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShackRemote");
+    public static string Folder { get; private set; } = UserFolder;
 
     /// <summary>Auf den rechnerweiten Datenordner umschalten (vor dem Laden des Zertifikats aufrufen).</summary>
     public static void UseMachineFolder(string folder)
@@ -69,19 +74,39 @@ public sealed class AppSettings
         }
     }
 
-    private static AppSettings Load()
+    private static AppSettings Load() => LoadFrom(Folder) ?? new AppSettings();
+
+    /// <summary>Datei neu einlesen (z. B. wenn ein anderer Prozess eine Kopplung entfernt hat).</summary>
+    public static void Reload()
+    {
+        lock (Gate) Current = Load();
+    }
+
+    /// <summary>
+    /// Einstellungen aus einem bestimmten Ordner lesen. null = keine Datei, nicht lesbar (Rechte) oder beschädigt.
+    /// </summary>
+    public static AppSettings? LoadFrom(string folder)
     {
         try
         {
-            if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new AppSettings();
+            var path = Path.Combine(folder, "settings.json");
+            if (File.Exists(path))
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path));
         }
         catch (Exception)
         {
-            // Beschädigte Datei: mit Standardwerten weitermachen, Datei wird beim nächsten Speichern ersetzt.
+            // Beschädigt oder keine Leserechte
         }
-        return new AppSettings();
+        return null;
     }
+
+    /// <summary>Einstellungen in einen bestimmten Ordner schreiben (Setup/Dienst-Einrichtung).</summary>
+    public static void SaveTo(string folder, AppSettings settings)
+    {
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "settings.json"), JsonSerializer.Serialize(settings, JsonOptions));
+    }
+
 }
 
 public sealed class TrustedClient

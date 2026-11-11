@@ -150,9 +150,14 @@ public sealed class FilePane : UserControl
     {
         if (_list.Columns.Count < 3) return;
         int size = LogicalToDeviceUnits(90), date = LogicalToDeviceUnits(135);
+        // Platz für die senkrechte Bildlaufleiste immer freihalten: Sie erscheint erst, wenn die Liste voll ist,
+        // ohne dass ein Resize kommt – sonst wird "Name" zu breit und es entsteht eine waagerechte Leiste.
+        int width = _list.ClientSize.Width;
+        if (_list.IsHandleCreated && (GetWindowLong(_list.Handle, GWL_STYLE) & WS_VSCROLL) == 0)
+            width -= SystemInformation.GetVerticalScrollBarWidthForDpi(DeviceDpi);
         _list.Columns[1].Width = size;
         _list.Columns[2].Width = date;
-        _list.Columns[0].Width = Math.Max(LogicalToDeviceUnits(150), _list.ClientSize.Width - size - date - 4);
+        _list.Columns[0].Width = Math.Max(LogicalToDeviceUnits(150), width - size - date - 2);
     }
 
     private void UpdateInfo()
@@ -408,6 +413,12 @@ public sealed class FilePane : UserControl
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr hIcon);
+
+    private const int GWL_STYLE = -16;
+    private const int WS_VSCROLL = 0x00200000;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     // ---- Ziehen und Ablegen ------------------------------------------------------------------------
 

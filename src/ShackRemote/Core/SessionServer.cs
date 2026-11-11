@@ -110,6 +110,7 @@ public sealed class SessionServer : IDisposable
                 var name = string.IsNullOrWhiteSpace(hello.Name) ? remote : hello.Name;
                 Log?.Invoke($"{name} ({remote}) meldet sich, Version {hello.Version}, Zertifikat {Identity.Short(clientFp)}");
 
+                AppSettings.Reload();   // Kopplungen evtl. von außen geändert (Verwaltungsfenster)
                 var trusted = AppSettings.Read(s => s.TrustedClients.Any(c => string.Equals(c.Fingerprint, clientFp, StringComparison.OrdinalIgnoreCase)));
                 if (!trusted)
                 {
@@ -163,6 +164,28 @@ public sealed class SessionServer : IDisposable
                 using var video = new VideoChannel(conn, VideoFps, monitors, msg => Log?.Invoke(msg));
                 MonitorInfo? shown = null;   // Monitor, den der Client gerade sieht (für Mauskoordinaten)
                 ClientConnected?.Invoke($"{name} ({remote})");
+
+                // Monitore während der Sitzung beobachten (ein-/ausgesteckt, Auflösung/Anordnung geändert)
+                using var watchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                _ = Task.Run(async () =>
+                {
+                    var signature = MonitorSignature(monitors);
+                    while (!watchCts.IsCancellationRequested)
+                    {
+                        try { await Task.Delay(3000, watchCts.Token); } catch (OperationCanceledException) { return; }
+                        List<MonitorInfo> now;
+                        try { now = DxgiOutputs.List(); } catch { continue; }
+                        if (now.Count == 0) continue;   // z. B. kurz beim Wechsel zum Anmeldebildschirm
+                        var sig = MonitorSignature(now);
+                        if (sig == signature) continue;
+                        signature = sig;
+                        monitors = now;
+                        video.UpdateMonitors(now);
+                        Log?.Invoke($"Monitore geändert: jetzt {now.Count} – " + string.Join(", ", now.Select(mo => $"Anzeige {mo.Display} {mo.Width}×{mo.Height} bei {mo.Left},{mo.Top}")));
+                        try { await conn.SendControlAsync(new ControlMessage { Type = "Monitors", Monitors = now }, watchCts.Token); }
+                        catch { return; }
+                    }
+                });
 
                 try
                 {
@@ -247,6 +270,7 @@ public sealed class SessionServer : IDisposable
                 }
                 finally
                 {
+                    watchCts.Cancel();
                     video.Stop();
                     audio?.Dispose();
                     InputInjector.ReleaseAll();
@@ -269,6 +293,9 @@ public sealed class SessionServer : IDisposable
     /// Bildkanal einer Sitzung. Verliert Windows die Bildschirmaufnahme (z. B. Sperrbildschirm, Monitor-Standby,
     /// Auflösungswechsel, UAC: DXGI_ERROR_ACCESS_LOST), wird sie alle 2 s neu aufgebaut, bis es wieder geht.
     /// </summary>
+    private static string MonitorSignature(List<MonitorInfo>? list) =>
+        list is null ? "" : string.Join("|", list.Select(m => $"{m.Adapter}/{m.Output}/{m.Left},{m.Top}/{m.Width}x{m.Height}/{m.Primary}"));
+
     private sealed class VideoChannel : IDisposable
     {
         private readonly FramedConnection _conn;
@@ -280,7 +307,10 @@ public sealed class SessionServer : IDisposable
         private int _failures;
         private string? _lastError;
 
-        private readonly List<MonitorInfo>? _monitors;
+        private volatile List<MonitorInfo>? _monitors;
+
+        /// <summary>Neue Monitorliste (Monitor ein-/ausgesteckt); gilt ab dem nächsten Start.</summary>
+        public void UpdateMonitors(List<MonitorInfo> monitors) => _monitors = monitors;
 
         public VideoChannel(FramedConnection conn, int fps, List<MonitorInfo>? monitors, Action<string> log)
         {

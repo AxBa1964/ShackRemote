@@ -8,7 +8,10 @@ public enum NetKind { LAN, WLAN, Tailscale, Sonstige }
 
 public sealed record LocalAddress(IPAddress Address, IPAddress? Broadcast, NetKind Kind, string InterfaceName)
 {
-    public override string ToString() => $"{Address}   ({Kind}, {InterfaceName})";
+    public override string ToString() =>
+        string.Equals(InterfaceName, Kind.ToString(), StringComparison.OrdinalIgnoreCase)
+            ? $"{Address}   ({Kind})"
+            : $"{Address}   ({Kind}, {InterfaceName})";
 }
 
 /// <summary>Ermittelt die IPv4-Adressen dieses Rechners und ordnet sie WLAN / LAN / Tailscale zu.</summary>

@@ -120,7 +120,16 @@ public sealed class ClientForm : Form
             var targets = known.SelectMany(k => k.Addresses)
                                .Select(a => IPAddress.TryParse(a, out var ip) ? ip : null)
                                .OfType<IPAddress>()
-                               .Where(ip => !own.Contains(ip));
+                               .ToList();
+
+            // Über Tailscale gibt es keinen Broadcast: alle Geräte, die dort gerade online sind, gezielt fragen
+            var peers = await TailscalePeers.OnlineAsync(msg => Log(msg));
+            if (peers.Count > 0)
+            {
+                Log($"Tailscale: {peers.Count} Gerät(e) online ({string.Join(", ", peers.Select(p => p.Name).Distinct())})");
+                targets.AddRange(peers.Select(p => p.Address));
+            }
+            targets = targets.Where(ip => !own.Contains(ip)).Distinct().ToList();
 
             var found = await DiscoveryClient.SearchAsync(targets, TimeSpan.FromSeconds(1.5), msg => Log(msg));
             foreach (var f in found.OrderBy(f => f.Info.Name))
@@ -229,13 +238,28 @@ public sealed class ClientForm : Form
         {
             await session.DisposeAsync();
             _status.Text = "Nicht verbunden";
-            Log($"Verbindung fehlgeschlagen: {ex.GetType().Name}: {ex.Message}");
+            Log($"Verbindung fehlgeschlagen: {Explain(ex, address)}");
         }
         finally
         {
             SetBusy(false);
         }
     }
+
+    /// <summary>Verständliche Fehlermeldung statt "The operation was canceled".</summary>
+    private static string Explain(Exception ex, IPAddress address) => ex switch
+    {
+        OperationCanceledException =>
+            $"{address} antwortet nicht auf Port {Protocol.SessionPort} (5 s gewartet). Mögliche Ursachen: " +
+            "ShackRemote läuft dort nicht oder lauscht nicht auf dieser Adresse (im Server-Fenster Haken bei der Adresse setzen), " +
+            "Windows-Firewall auf dem Shack-PC, oder Tailscale ist nicht verbunden.",
+        SocketException { SocketErrorCode: SocketError.ConnectionRefused } =>
+            $"{address} lehnt ab: Dort lauscht kein ShackRemote-Server auf Port {Protocol.SessionPort} " +
+            "(Server nicht gestartet oder diese Adresse im Server-Fenster abgewählt).",
+        SocketException { SocketErrorCode: SocketError.HostUnreachable or SocketError.NetworkUnreachable } =>
+            $"{address} ist nicht erreichbar (kein Weg dorthin – anderes Netz? Tailscale aus?).",
+        _ => $"{ex.GetType().Name}: {ex.Message}",
+    };
 
     private async Task DisconnectAsync(string? message)
     {

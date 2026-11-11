@@ -30,7 +30,7 @@ Beide Windows 11. Technik: C# / .NET 10, veröffentlicht als Self-contained Sing
 | 1c | Bedienung und Ton: Maus, Tastatur, Monitorleiste 1/2/3, WASAPI/Opus | **erledigt** (11.11.2026): Maus/Tastatur 0.4.0, Ton 0.7.0 (Opus, Quelle wählbar) |
 | 1d | Dienstbetrieb: Sperr-/Anmeldebildschirm, Strg+Alt+Entf, Sperren, Start mit Windows | **erledigt** (11.11.2026, 0.5.x) |
 | 1e | Setup (Inno Setup): Startmenü/Desktop-Symbol, Dienst und Firewall per Haken | **neu** (11.11.2026, 1.0.0) |
-| 2 | Zugriff von unterwegs über Tailscale | offen |
+| 2 | Zugriff von unterwegs über Tailscale | **läuft** (11.11.2026): Verbindung über Handy-Hotspot erfolgreich; 1.1.0 findet Server über `tailscale status` |
 | 3 | optional: Windows-Dienst (Anmeldebildschirm/UAC), Zwischenablage, Dateien | offen |
 
 ## Setup bauen und installieren
@@ -50,3 +50,14 @@ Ergebnis: `publish\setup\ShackRemote-Setup-<Version>.exe` – eine Datei, läuft
 - **Update:** neues Setup einfach darüber installieren; ein vorhandener Dienst wird angehalten, aktualisiert und neu gestartet.
 - **Deinstallieren:** über Windows-Einstellungen → Apps; Dienst und Firewall-Regel werden entfernt.
   Kopplungen und Einstellungen (`C:\ProgramData\ShackRemote`, `%APPDATA%\ShackRemote`) bleiben liegen.
+
+## Neu in 1.1.0
+
+- **Tailscale:** Die Suche fragt alle Geräte, die in Tailscale online sind, gezielt an (über Tailscale gibt es keinen Broadcast).
+  Im Server-Fenster erscheint ein Warnhinweis, wenn die Tailscale-Adresse abgewählt ist.
+- **Dienst und Adressen:** Das Verwaltungsfenster zeigt die Adressauswahl des *Dienstes*. Weicht sie ab, erscheint
+  „Für Dienst übernehmen“ (Adminrechte, Dienst startet neu). „Dienst aktualisieren“ und das Setup übernehmen die Auswahl immer.
+- **Gekoppelte Geräte:** Liste im Server-Fenster mit „Entfernen“.
+- **Monitore:** Ein-/Ausstecken während der Sitzung wird erkannt (alle 3 s), die Monitorknöpfe passen sich an.
+- **Fehlermeldungen:** Bei Zeitüberschreitung/Ablehnung erklärt der Client mögliche Ursachen.
+- **Dateifenster:** Spalte „Name“ lässt Platz für die Bildlaufleiste (keine waagerechte Leiste mehr).

@@ -16,6 +16,8 @@ internal static class Program
     ///   /agent                - Server-Agent als SYSTEM in der Benutzersitzung (startet der Dienst)
     ///   /dienst-installieren  - Dienst einrichten (braucht Adminrechte; Knopf im Server-Fenster)
     ///   /dienst-entfernen     - Dienst entfernen (braucht Adminrechte; Knopf im Server-Fenster)
+    ///   /dienst-adressen      - Adressauswahl des Benutzers in den Dienst übernehmen, Dienst neu starten (Adminrechte)
+    ///   /kopplung-entfernen=FP - gekoppeltes Gerät entfernen, beim Dienst und beim Benutzer (Adminrechte)
     ///   /still                - zusammen mit den beiden oberen: ohne Erfolgsmeldung (für das Setup)
     ///   /encoder=X            - Test: Encoder erzwingen (qsv, nvenc, amf, cpu), ohne Rückfall
     /// </summary>
@@ -47,6 +49,25 @@ internal static class Program
             {
                 if (!Has("/still") || install)
                     MessageBox.Show(ex.Message, "ShackRemote – Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 1;
+            }
+        }
+
+        // Aus dem Verwaltungsfenster (mit Adminrechten): Adressen übernehmen bzw. Kopplung entfernen
+        var removeArg = args.FirstOrDefault(x => x.StartsWith("/kopplung-entfernen=", StringComparison.OrdinalIgnoreCase));
+        if (Has("/dienst-adressen") || removeArg is not null)
+        {
+            try
+            {
+                var result = removeArg is not null
+                    ? ServiceSetup.RemovePairing(removeArg["/kopplung-entfernen=".Length..])
+                    : ServiceSetup.ApplySettings();
+                FileLog.Write("dienst", result.Trim().Replace(Environment.NewLine, " | "));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "ShackRemote – Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }

@@ -34,8 +34,15 @@ public sealed class ServerForm : Form
     private readonly Label _pairingCode;
     private readonly TextBox _log;
 
+    private readonly Label _tailscaleHint;
+    private readonly Button _applyToService;
+    private readonly ListView _paired;
+    private readonly Button _unpair;
+    private readonly Label _pairedNote;
+
     private volatile LocalAddress[] _active = Array.Empty<LocalAddress>();
     private bool _filling;
+    private string? _lastExcludedLog;
 
     public ServerForm(X509Certificate2 cert, ServerMode mode)
     {
@@ -45,8 +52,8 @@ public sealed class ServerForm : Form
         LayoutKit.PrepareForm(this, $"ShackRemote Server {Protocol.Version} – {Environment.MachineName}"
                                     + (mode == ServerMode.Agent ? " (Dienst)" : ""));
         if (mode == ServerMode.Agent) WindowState = FormWindowState.Minimized;
-        ClientSize = new Size(720, 600);
-        MinimumSize = new Size(560, 480);
+        ClientSize = new Size(760, 760);
+        MinimumSize = new Size(600, 560);
 
         // --- Adressen ---------------------------------------------------------------
         _addresses = new CheckedListBox
@@ -61,12 +68,51 @@ public sealed class ServerForm : Form
 
         var refresh = LayoutKit.MakeButton("Neu einlesen");
         refresh.Click += (_, _) => FillAddresses();
+        _applyToService = Theme.Primary(LayoutKit.MakeButton("Für Dienst übernehmen"));
+        _applyToService.Visible = false;
+        _applyToService.Click += async (_, _) => await ApplyToServiceAsync();
+        new ToolTip().SetToolTip(_applyToService, "Der Dienst hat eigene Einstellungen. Übernimmt die Haken und startet den Dienst neu (Windows fragt nach Adminrechten).");
+
+        _tailscaleHint = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new Size(700, 0),
+            ForeColor = Color.FromArgb(Theme.IsDark ? 255 : 196, Theme.IsDark ? 185 : 90, 0),
+            Margin = new Padding(3, 0, 3, 6),
+            Visible = false,
+        };
 
         var addrRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true, Margin = new Padding(0) };
         addrRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         addrRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         addrRow.Controls.Add(_addresses, 0, 0);
-        addrRow.Controls.Add(LayoutKit.ButtonStack(refresh), 1, 0);
+        addrRow.Controls.Add(LayoutKit.ButtonStack(refresh, _applyToService), 1, 0);
+
+        // --- Gekoppelte Geräte --------------------------------------------------------------
+        _paired = new ListView
+        {
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            View = View.Details,
+            FullRowSelect = true,
+            MultiSelect = false,
+            HideSelection = false,
+            HeaderStyle = ColumnHeaderStyle.Nonclickable,
+            Height = 92,
+        };
+        _paired.Columns.Add("Gerät", 200);
+        _paired.Columns.Add("Gekoppelt am", 150);
+        _paired.Columns.Add("Zertifikat", 200);
+        _unpair = LayoutKit.MakeButton("Entfernen");
+        _unpair.Enabled = false;
+        _unpair.Click += async (_, _) => await UnpairSelectedAsync();
+        _paired.SelectedIndexChanged += (_, _) => _unpair.Enabled = _paired.SelectedItems.Count > 0;
+        new ToolTip().SetToolTip(_unpair, "Gerät entkoppeln: Es muss sich beim nächsten Mal wieder mit Code koppeln.");
+        _pairedNote = new Label { AutoSize = true, ForeColor = Theme.SubtleText, Margin = new Padding(3, 0, 3, 3), Visible = false };
+        var pairedRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, AutoSize = true, Margin = new Padding(0) };
+        pairedRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        pairedRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        pairedRow.Controls.Add(_paired, 0, 0);
+        pairedRow.Controls.Add(LayoutKit.ButtonStack(_unpair), 1, 0);
 
         // --- Status und Kopplung -------------------------------------------------------
         _status = LayoutKit.MakeLabel("Wartet auf Verbindung …", bold: true);
@@ -112,9 +158,13 @@ public sealed class ServerForm : Form
         if (mode == ServerMode.Agent) { _serviceInstall.Visible = false; _serviceRemove.Visible = false; }
 
         // --- Gesamtlayout ------------------------------------------------------------------
-        var root = LayoutKit.Column(8);
+        var root = LayoutKit.Column(12);
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Überschrift Adressen
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Adressliste
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Tailscale-Hinweis
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Überschrift gekoppelte Geräte
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // gekoppelte Geräte
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Hinweis gekoppelte Geräte
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Zertifikat
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Ports
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Dienst
@@ -124,12 +174,16 @@ public sealed class ServerForm : Form
 
         root.Controls.Add(LayoutKit.MakeLabel("Lauschen auf diesen IPv4-Adressen:"), 0, 0);
         root.Controls.Add(addrRow, 0, 1);
-        root.Controls.Add(LayoutKit.MakeLabel($"Zertifikat dieses PCs: {Identity.Short(_fingerprint)}"), 0, 2);
-        root.Controls.Add(LayoutKit.MakeLabel($"Ports: UDP {Protocol.DiscoveryPort} (Suche), TCP {Protocol.SessionPort} (Sitzung)"), 0, 3);
-        root.Controls.Add(serviceRow, 0, 4);
-        root.Controls.Add(_status, 0, 5);
-        root.Controls.Add(_pairingBox, 0, 6);
-        root.Controls.Add(_log, 0, 7);
+        root.Controls.Add(_tailscaleHint, 0, 2);
+        root.Controls.Add(LayoutKit.MakeLabel("Gekoppelte Geräte:"), 0, 3);
+        root.Controls.Add(pairedRow, 0, 4);
+        root.Controls.Add(_pairedNote, 0, 5);
+        root.Controls.Add(LayoutKit.MakeLabel($"Zertifikat dieses PCs: {Identity.Short(_fingerprint)}"), 0, 6);
+        root.Controls.Add(LayoutKit.MakeLabel($"Ports: UDP {Protocol.DiscoveryPort} (Suche), TCP {Protocol.SessionPort} (Sitzung)"), 0, 7);
+        root.Controls.Add(serviceRow, 0, 8);
+        root.Controls.Add(_status, 0, 9);
+        root.Controls.Add(_pairingBox, 0, 10);
+        root.Controls.Add(_log, 0, 11);
         Controls.Add(root);
         var headerRight = mode == ServerMode.Agent
             ? new Control[] { LayoutKit.InfoButton(this) }
@@ -150,7 +204,7 @@ public sealed class ServerForm : Form
             WindowState = WindowState == FormWindowState.Minimized ? FormWindowState.Normal : WindowState;
             Activate();
         });
-        _server.PairingEnded += () => Ui(() => _pairingBox.Visible = false);
+        _server.PairingEnded += () => Ui(() => { _pairingBox.Visible = false; FillPaired(); });
         _server.ClientConnected += who => Ui(() => _status.Text = $"Verbunden: {who}");
         _server.ClientDisconnected += () => Ui(() => _status.Text = "Wartet auf Verbindung …");
 
@@ -160,6 +214,7 @@ public sealed class ServerForm : Form
         Load += (_, _) =>
         {
             FillAddresses();
+            FillPaired();
             if (_mode != ServerMode.Management) StartDiscovery();
             NetworkChange.NetworkAddressChanged += OnAddressChanged;
             UpdateServiceState();
@@ -182,9 +237,14 @@ public sealed class ServerForm : Form
         FillAddresses();
     });
 
+    /// <summary>Einstellungen des Dienstes (nur im Verwaltungsfenster; null = nicht lesbar).</summary>
+    private static AppSettings? ServiceSettings() => AppSettings.LoadFrom(ServiceSetup.DataFolder);
+
     private void FillAddresses()
     {
-        var excluded = AppSettings.Read(s => s.ExcludedAddresses.ToHashSet());
+        // Im Verwaltungsfenster zeigen, was der DIENST verwendet (eigene Datei in ProgramData)
+        var source = _mode == ServerMode.Management ? ServiceSettings() : null;
+        var excluded = (source?.ExcludedAddresses ?? AppSettings.Read(s => s.ExcludedAddresses)).ToHashSet();
         _filling = true;
         _addresses.Items.Clear();
         foreach (var la in NetInfo.GetAll())
@@ -210,14 +270,114 @@ public sealed class ServerForm : Form
         });
 
         _active = chosen;
+
+        // Hinweis, wenn Tailscale abgewählt ist (dann kein Zugriff von unterwegs)
+        var offTailscale = all.Except(chosen).Where(a => a.Kind == NetKind.Tailscale).Select(a => a.Address.ToString()).ToList();
+        _tailscaleHint.Text = offTailscale.Count == 0 ? "" :
+            $"⚠ Tailscale-Adresse {string.Join(", ", offTailscale)} ist abgewählt – Zugriff von unterwegs ist so nicht möglich.";
+        _tailscaleHint.Visible = offTailscale.Count > 0;
+
         if (_mode == ServerMode.Management)
         {
             _server.Stop();
-            return;   // der Dienst lauscht, nicht dieses Fenster
+            // Der Dienst lauscht, nicht dieses Fenster. Weicht die Auswahl von der des Dienstes ab: Übernehmen anbieten.
+            var service = ServiceSettings();
+            var serviceExcluded = (service?.ExcludedAddresses ?? new List<string>())
+                .Where(x => all.Any(a => a.Address.ToString() == x)).ToHashSet();
+            _applyToService.Visible = service is null || !serviceExcluded.SetEquals(notChosen);
+            return;
+        }
+        _applyToService.Visible = false;
+
+        var excludedText = string.Join(", ", notChosen);
+        if (excludedText != _lastExcludedLog)
+        {
+            if (notChosen.Count > 0) Log($"Abgewählt (hier wird nicht gelauscht): {excludedText}");
+            else if (_lastExcludedLog is not null) Log("Alle Adressen aktiv.");
+            _lastExcludedLog = excludedText;
         }
         _server.Start(chosen.Select(a => a.Address));
         if (chosen.Length == 0)
             Log("Keine Adresse ausgewählt – Server ist nicht erreichbar.");
+    }
+
+    /// <summary>Adressauswahl in den Dienst übernehmen (Adminrechte, Dienst wird neu gestartet).</summary>
+    private async Task ApplyToServiceAsync()
+    {
+        _applyToService.Enabled = false;
+        try
+        {
+            Log("Übernehme Adressauswahl in den Dienst (Windows fragt nach Adminrechten) …");
+            int code = await Task.Run(() => ServiceSetup.RunElevated("/dienst-adressen"));
+            Log(code == 0 ? "Übernommen, Dienst neu gestartet." : $"Abgebrochen oder fehlgeschlagen (Code {code}).");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            Log("Adminrechte wurden nicht erteilt.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Fehler: {ex.Message}");
+        }
+        _applyToService.Enabled = true;
+        FillAddresses();
+        FillPaired();
+    }
+
+    /// <summary>Liste der gekoppelten Geräte – im Verwaltungsfenster die des Dienstes.</summary>
+    private void FillPaired()
+    {
+        List<TrustedClient> list;
+        if (_mode == ServerMode.Management)
+        {
+            var service = ServiceSettings();
+            _pairedNote.Text = service is null
+                ? "Die Liste des Dienstes ist nicht lesbar – einmal „Dienst aktualisieren“ ausführen."
+                : "Liste des Dienstes. Entfernen fragt nach Adminrechten.";
+            _pairedNote.Visible = true;
+            list = service?.TrustedClients ?? new List<TrustedClient>();
+        }
+        else
+        {
+            AppSettings.Reload();
+            list = AppSettings.Read(s => s.TrustedClients.ToList());
+            _pairedNote.Visible = false;
+        }
+
+        _paired.Items.Clear();
+        foreach (var c in list.OrderBy(c => c.Name))
+            _paired.Items.Add(new ListViewItem(new[] { c.Name, c.PairedAt.ToString("dd.MM.yyyy HH:mm"), Identity.Short(c.Fingerprint) }) { Tag = c });
+        if (list.Count == 0)
+            _paired.Items.Add(new ListViewItem(new[] { "(noch keins)", "", "" }) { ForeColor = Theme.SubtleText });
+        _unpair.Enabled = false;
+    }
+
+    private async Task UnpairSelectedAsync()
+    {
+        if (_paired.SelectedItems.Count == 0 || _paired.SelectedItems[0].Tag is not TrustedClient c) return;
+        if (ModernDialog.Show(this, "Gerät entkoppeln",
+                $"„{c.Name}“ entkoppeln? Beim nächsten Verbinden muss es sich wieder mit Code koppeln.",
+                ("Entkoppeln", DialogResult.Yes, true), ("Abbrechen", DialogResult.No, false)) != DialogResult.Yes)
+            return;
+
+        if (_mode == ServerMode.Management)
+        {
+            try
+            {
+                int code = await Task.Run(() => ServiceSetup.RunElevated($"/kopplung-entfernen={c.Fingerprint}"));
+                Log(code == 0 ? $"{c.Name} entkoppelt." : $"Entkoppeln abgebrochen oder fehlgeschlagen (Code {code}).");
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                Log("Adminrechte wurden nicht erteilt.");
+            }
+        }
+        else
+        {
+            AppSettings.Update(s => s.TrustedClients.RemoveAll(t => string.Equals(t.Fingerprint, c.Fingerprint, StringComparison.OrdinalIgnoreCase)));
+            Log($"{c.Name} entkoppelt.");
+        }
+        FillPaired();
     }
 
     private ServerInfo BuildInfo() => new()
@@ -248,7 +408,7 @@ public sealed class ServerForm : Form
                 ? "Ohne Dienst: kein Sperr-/Anmeldebildschirm, kein Strg+Alt+Entf, kein Start mit Windows."
                 : $"Dienst: {status}.",
         };
-        _addresses.Enabled = _mode != ServerMode.Management;
+        _addresses.Enabled = true;   // im Verwaltungsfenster: Änderung per "Für Dienst übernehmen"
         if (_mode == ServerMode.Management) _status.Text = "Server läuft als Dienst.";
     }
 
@@ -301,6 +461,8 @@ public sealed class ServerForm : Form
             ApplySelection();
         }
         UpdateServiceState();
+        FillAddresses();
+        FillPaired();
         _serviceInstall.Enabled = true;
     }
 
