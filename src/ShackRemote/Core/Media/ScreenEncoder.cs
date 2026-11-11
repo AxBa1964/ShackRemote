@@ -110,9 +110,22 @@ public sealed unsafe class ScreenEncoder : IDisposable
             Log?.Invoke($"Video: Encoder-Parameter {width}×{height}, time_base {timeBase.num}/{timeBase.den}, " +
                         $"Format {ffmpeg.av_get_pix_fmt_name((AVPixelFormat)ffmpeg.av_buffersink_get_format(sink))}");
             // Beim Öffnen ausführlich protokollieren, damit Quick-Sync-Fehler im Server-Protokoll stehen
+            //
+            // Umgehung für die DLL-Fassung von FFmpeg: avutil und avcodec enthalten jeweils eine eigene Kopie
+            // des Intel-oneVPL-Dispatchers. Der Encoder (avcodec) bekommt sonst den "Loader" des QSV-Geräts aus
+            // avutil und findet darüber keine Implementierung ("Error creating a MFX session: -9").
+            // Ohne Loader legt avcodec einen eigenen an und hängt seine Sitzung trotzdem an das gemeinsame Gerät.
+            var framesCtx = (AVHWFramesContext*)ffmpeg.av_buffersink_get_hw_frames_ctx(sink)->data;
+            var qsvDevice = (QsvDeviceContext*)framesCtx->device_ctx->hwctx;
+            var savedLoader = qsvDevice->Loader;
+            qsvDevice->Loader = IntPtr.Zero;
             ffmpeg.av_log_set_level(ffmpeg.AV_LOG_VERBOSE);
             try { FfmpegLib.Check(ffmpeg.avcodec_open2(enc, codec, null), "h264_qsv öffnen"); }
-            finally { ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING); }
+            finally
+            {
+                ffmpeg.av_log_set_level(ffmpeg.AV_LOG_WARNING);
+                qsvDevice->Loader = savedLoader;   // gehört weiter dem Gerät und wird mit ihm freigegeben
+            }
 
             // --- SPS/PPS vor jedes Schlüsselbild (dump_extra), damit der Client jederzeit einsteigen kann ---
             FfmpegLib.Check(ffmpeg.av_bsf_alloc(ffmpeg.av_bsf_get_by_name("dump_extra"), &bsf), "dump_extra");
@@ -184,6 +197,13 @@ public sealed unsafe class ScreenEncoder : IDisposable
             if (graph != null) ffmpeg.avfilter_graph_free(&graph);
             if (device != null) ffmpeg.av_buffer_unref(&device);
         }
+    }
+
+    /// <summary>AVQSVDeviceContext aus libavutil/hwcontext_qsv.h (FFmpeg 9.0): mfxSession session; void* loader.</summary>
+    private struct QsvDeviceContext
+    {
+        public IntPtr Session;
+        public IntPtr Loader;
     }
 
     public void Dispose()
