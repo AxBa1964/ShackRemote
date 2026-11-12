@@ -8,8 +8,10 @@ public static class FileLog
 {
     private static readonly object Gate = new();
 
+    /// <summary>Ablageort der Protokolle (C:\ProgramData\ShackRemote).</summary>
     public static string Folder => ServiceSetup.DataFolder;
 
+    /// <summary>Hängt eine Zeile mit Zeitstempel an &lt;name&gt;.log an; Fehler beim Schreiben werden ignoriert.</summary>
     public static void Write(string name, string message)
     {
         try

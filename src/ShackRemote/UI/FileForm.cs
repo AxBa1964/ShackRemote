@@ -403,6 +403,7 @@ public sealed class FileForm : Form
 // Seiten: Laptop (lokal) und Shack-PC (über RemoteFs)
 // =================================================================================================
 
+/// <summary>Eine Seite des Dateifensters: lokaler Rechner oder Shack-PC. Pfade sind absolute Windows-Pfade.</summary>
 public interface IFileSide
 {
     /// <summary>Laufwerke; update(alt, neu) meldet nachgereichte Details (neu = null: nicht bereit, ausblenden).</summary>
@@ -414,6 +415,7 @@ public interface IFileSide
     Task CopyAsync(string from, string to);
 }
 
+/// <summary>Seite "Dieser PC": direkter Zugriff auf das lokale Dateisystem.</summary>
 public sealed class LocalSide : IFileSide
 {
     /// <summary>Sofort alle Buchstaben, Details je Laufwerk werden nachgereicht, sobald es antwortet.</summary>
@@ -425,21 +427,34 @@ public sealed class LocalSide : IFileSide
             _ = Task.Run(() => FsOps.DescribeDrive(q.Name)).ContinueWith(t => update(q, t.IsCompletedSuccessfully ? t.Result : null));
         return Task.FromResult(quick);
     }
+    /// <summary>Ordnerinhalt (im Hintergrund).</summary>
     public Task<List<FsEntry>> ListAsync(string path) => Task.Run(() => FsOps.List(path));
+    /// <summary>Ordner anlegen.</summary>
     public Task MkdirAsync(string path) => Task.Run(() => Directory.CreateDirectory(path));
+    /// <summary>Löschen (endgültig).</summary>
     public Task DeleteAsync(string path) => Task.Run(() => FsOps.Delete(path));
+    /// <summary>Umbenennen bzw. verschieben.</summary>
     public Task RenameAsync(string from, string to) => Task.Run(() => FsOps.Move(from, to));
+    /// <summary>Kopieren.</summary>
     public Task CopyAsync(string from, string to) => Task.Run(() => FsOps.Copy(from, to));
 }
 
+/// <summary>Seite "Shack-PC": Zugriff über RemoteFs und die Sitzung.</summary>
 public sealed class RemoteSide : IFileSide
 {
+    /// <summary>Zugriff auf den Shack-PC (auch für Up- und Downloads).</summary>
     public RemoteFs Fs { get; }
     public RemoteSide(RemoteFs fs) => Fs = fs;
+    /// <summary>Laufwerke des Shack-PCs (der Server liefert sie vollständig).</summary>
     public Task<List<FsEntry>> DrivesAsync(Action<FsEntry, FsEntry?>? update = null) => Fs.DrivesAsync();
+    /// <summary>Ordnerinhalt auf dem Shack-PC.</summary>
     public Task<List<FsEntry>> ListAsync(string path) => Fs.ListAsync(path);
+    /// <summary>Ordner anlegen.</summary>
     public Task MkdirAsync(string path) => Fs.MkdirAsync(path);
+    /// <summary>Löschen (endgültig).</summary>
     public Task DeleteAsync(string path) => Fs.DeleteAsync(path);
+    /// <summary>Umbenennen bzw. verschieben.</summary>
     public Task RenameAsync(string from, string to) => Fs.RenameAsync(from, to);
+    /// <summary>Kopieren innerhalb des Shack-PCs.</summary>
     public Task CopyAsync(string from, string to) => Fs.CopyAsync(from, to);
 }

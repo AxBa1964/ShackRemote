@@ -19,6 +19,7 @@ public static class UserContext
         return WindowsIdentity.RunImpersonated(handle, action);
     }
 
+    /// <summary>Wie Run&lt;T&gt;, ohne Rückgabewert.</summary>
     public static void Run(Action action) => Run(() => { action(); return 0; });
 
     [DllImport("wtsapi32.dll", SetLastError = true)]

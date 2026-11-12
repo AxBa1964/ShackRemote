@@ -44,21 +44,25 @@ public sealed unsafe class VideoRenderer : IDisposable
     private bool _waitForKey = true;
     private long _lastKeyRequest;
 
+    /// <summary>Meldungen für das Protokoll.</summary>
     public event Action<string>? Log;
     /// <summary>Decoder braucht ein Schlüsselbild (Einstieg, Rückstand, Fehler).</summary>
     public event Action? KeyframeNeeded;
 
+    /// <summary>Zähler für die Statuszeile: dekodierte und angezeigte Bilder, Neusynchronisationen.</summary>
     public int FramesDecoded;
     public int FramesShown;
     public int Resyncs;
 
     /// <summary>Größe des Bildes beim Server.</summary>
     public int SourceWidth { get; private set; }
+    /// <summary>Höhe des Bildes beim Server.</summary>
     public int SourceHeight { get; private set; }
 
-    /// <summary>Wo das Bild im Fenster liegt (für Mauskoordinaten in Stufe 1c).</summary>
+    /// <summary>Wo das Bild im Fenster liegt (Umrechnung der Mauskoordinaten).</summary>
     public Rectangle ImageBounds { get; private set; }
 
+    /// <summary>true, sobald mindestens ein Bild angezeigt wurde.</summary>
     public bool HasPicture { get; private set; }
 
     public VideoRenderer(IntPtr hwnd, int width, int height)
@@ -69,6 +73,7 @@ public sealed unsafe class VideoRenderer : IDisposable
         _thread = new Thread(Run) { IsBackground = true, Name = "Decoder/Anzeige", Priority = ThreadPriority.AboveNormal };
     }
 
+    /// <summary>Decoder-/Anzeige-Thread starten.</summary>
     public void Start()
     {
         FfmpegLib.EnsureLoaded();
@@ -89,6 +94,7 @@ public sealed unsafe class VideoRenderer : IDisposable
         _queue.Add((Array.Empty<byte>(), false));   // Marker: Decoder leeren
     }
 
+    /// <summary>Neue Fenstergröße; Swapchain und Videoprozessor werden im Thread angepasst.</summary>
     public void Resize(int width, int height)
     {
         _targetWidth = Math.Max(16, width);
@@ -454,6 +460,7 @@ public sealed unsafe class VideoRenderer : IDisposable
         _hw = null;
     }
 
+    /// <summary>Thread beenden und alle D3D11-/FFmpeg-Objekte freigeben.</summary>
     public void Dispose()
     {
         _stop = true;

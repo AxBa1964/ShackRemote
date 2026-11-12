@@ -16,6 +16,7 @@ public static unsafe class FfmpegLib
     /// <summary>FFmpeg-Meldungen (Warnungen und Fehler).</summary>
     public static event Action<string>? Log;
 
+    /// <summary>FFmpeg-DLLs (ffmpeg\bin bzw. neben der exe) einmalig laden und Protokollausgabe umleiten.</summary>
     public static void EnsureLoaded()
     {
         lock (Gate)
@@ -68,6 +69,7 @@ public static unsafe class FfmpegLib
         }
     }
 
+    /// <summary>FFmpeg-Fehlercode als Text.</summary>
     public static string Error(int code)
     {
         const int size = 256;
@@ -76,11 +78,13 @@ public static unsafe class FfmpegLib
         return Marshal.PtrToStringAnsi((IntPtr)buffer) ?? code.ToString();
     }
 
+    /// <summary>Wirft bei negativem FFmpeg-Rückgabewert eine Ausnahme mit Klartext.</summary>
     public static void Check(int code, string what)
     {
         if (code < 0) throw new InvalidOperationException($"{what}: {Error(code)} ({code})");
     }
 
+    /// <summary>Entspricht dem C-Makro AVERROR(e).</summary>
     public static int AVERROR(int errno) => -errno;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

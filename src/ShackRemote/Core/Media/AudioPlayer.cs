@@ -21,9 +21,12 @@ public sealed unsafe class AudioPlayer : IDisposable
     private readonly object _gate = new();
     private byte[] _pcm = new byte[4096];
 
+    /// <summary>Meldungen für das Protokoll.</summary>
     public event Action<string>? Log;
+    /// <summary>Anzahl verworfener Pakete, weil der Puffer zu voll war (hält die Verzögerung klein).</summary>
     public int Drops;
 
+    /// <summary>Opus-Decoder und Wiedergabe (WASAPI, Standardgerät) starten.</summary>
     public void Start()
     {
         FfmpegLib.EnsureLoaded();
@@ -119,6 +122,7 @@ public sealed unsafe class AudioPlayer : IDisposable
     /// <summary>Wie viel Ton gerade im Puffer liegt (Verzögerung beim Laptop).</summary>
     public TimeSpan Buffered => _buffer?.BufferedDuration ?? TimeSpan.Zero;
 
+    /// <summary>Wiedergabe beenden, Decoder freigeben.</summary>
     public void Dispose()
     {
         try { _out?.Stop(); } catch { }

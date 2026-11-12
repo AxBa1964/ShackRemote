@@ -9,8 +9,10 @@ namespace ShackRemote.Core.Media;
 /// </summary>
 internal static unsafe class Com
 {
+    /// <summary>Zeiger auf die Methodentabelle (vtable) eines COM-Objekts.</summary>
     public static void** Vtbl(IntPtr p) => *(void***)p;
 
+    /// <summary>IUnknown::Release aufrufen und Zeiger auf null setzen.</summary>
     public static void Release(ref IntPtr p)
     {
         if (p == IntPtr.Zero) return;
@@ -18,6 +20,7 @@ internal static unsafe class Com
         p = IntPtr.Zero;
     }
 
+    /// <summary>IUnknown::QueryInterface; wirft bei Fehler.</summary>
     public static IntPtr QueryInterface(IntPtr p, Guid iid)
     {
         IntPtr result;
@@ -26,19 +29,25 @@ internal static unsafe class Com
         return result;
     }
 
+    /// <summary>Wirft bei HRESULT &lt; 0 eine Ausnahme mit Klartext.</summary>
     public static void Check(int hr, string what)
     {
         if (hr < 0) throw new COMException($"{what} fehlgeschlagen (0x{hr:X8})", hr);
     }
 
+    /// <summary>Schnittstellen-IDs aus den Windows-SDK-Headern (dxgi.h, d3d11.h).</summary>
     public static readonly Guid IID_IDXGIDevice = new("54ec77fa-1377-44e6-8c32-88fd5f44c84c");
+    /// <summary>IDXGIFactory1 (dxgi.h).</summary>
     public static readonly Guid IID_IDXGIFactory1 = new("770aae78-f26f-4dba-a829-253c83d1b387");
+    /// <summary>IDXGIFactory2 (dxgi1_2.h, für die Swapchain).</summary>
     public static readonly Guid IID_IDXGIFactory2 = new("50c83a1c-e072-4c48-87b0-3630fa36a6d0");
+    /// <summary>ID3D11Texture2D (d3d11.h).</summary>
     public static readonly Guid IID_ID3D11Texture2D = new("6f15aaf2-d208-4e89-9ab4-489535d34f9c");
 }
 
 // ---- Strukturen (Layout wie in den Windows-Headern) ------------------------------------------------
 
+/// <summary>Win32 RECT. Die folgenden Strukturen bilden die Windows-Header 1:1 nach (Felder siehe Microsoft-Dokumentation).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct RECT
 {
@@ -46,6 +55,7 @@ internal struct RECT
     public RECT(int l, int t, int r, int b) { Left = l; Top = t; Right = r; Bottom = b; }
 }
 
+/// <summary>DXGI_RATIONAL (Bildrate als Bruch).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct DXGI_RATIONAL { public uint Numerator, Denominator; }
 
@@ -87,6 +97,7 @@ internal struct VpStream
     public IntPtr PastSurfaces, InputSurface, FutureSurfaces, PastSurfacesRight, InputSurfaceRight, FutureSurfacesRight;
 }
 
+/// <summary>D3D11_VIDEO_COLOR_RGBA (Hintergrundfarbe des Videoprozessors).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct VideoColorRgba { public float R, G, B, A; }
 
@@ -111,8 +122,10 @@ internal unsafe struct DxgiOutputDesc
     public IntPtr Monitor;
 }
 
+/// <summary>Einstieg in DXGI (dxgi.dll).</summary>
 internal static partial class DxgiNative
 {
+    /// <summary>Erzeugt die DXGI-Factory zum Aufzählen von Grafikkarten und Monitoren.</summary>
     [LibraryImport("dxgi.dll")]
     public static partial int CreateDXGIFactory1(in Guid riid, out IntPtr factory);
 }

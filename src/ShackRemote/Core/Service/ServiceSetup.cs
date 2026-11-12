@@ -16,9 +16,11 @@ namespace ShackRemote.Core.Service;
 /// </summary>
 public static class ServiceSetup
 {
+    /// <summary>Programmordner des Dienstes: C:\Program Files\ShackRemote.</summary>
     public static string ProgramFolder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ShackRemote");
 
+    /// <summary>Datenordner des Dienstes: C:\ProgramData\ShackRemote (Zertifikat, Einstellungen, Protokolle).</summary>
     public static string DataFolder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ShackRemote");
 
@@ -36,6 +38,7 @@ public static class ServiceSetup
         }
     }
 
+    /// <summary>true, wenn der Dienst eingerichtet ist und läuft.</summary>
     public static bool IsRunning => Status() == ServiceControllerStatus.Running;
 
     /// <summary>Startet dieses Programm mit Adminrechten (UAC-Abfrage) für /dienst-installieren bzw. /dienst-entfernen.</summary>
@@ -49,6 +52,7 @@ public static class ServiceSetup
 
     // ---- Läuft mit Adminrechten ------------------------------------------------------------------
 
+    /// <summary>Richtet den Dienst ein bzw. aktualisiert ihn (läuft mit Adminrechten, /dienst-installieren). Liefert ein Protokoll der Schritte.</summary>
     public static string Install()
     {
         var log = new StringBuilder();
@@ -166,6 +170,7 @@ public static class ServiceSetup
         return n > 0 ? "Kopplung entfernt." : "Kopplung war nicht (mehr) vorhanden.";
     }
 
+    /// <summary>Hält den Dienst an und entfernt ihn (/dienst-entfernen). Programm- und Datenordner bleiben liegen.</summary>
     public static string Uninstall()
     {
         var log = new StringBuilder();

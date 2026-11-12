@@ -9,6 +9,7 @@ namespace ShackRemote.UI;
 /// </summary>
 public sealed class VideoPanel : Control
 {
+    /// <summary>Renderer, der in dieses Panel zeichnet (für Größenänderungen).</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public VideoRenderer? Renderer { get; set; }

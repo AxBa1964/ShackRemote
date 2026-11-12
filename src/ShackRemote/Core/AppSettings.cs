@@ -8,10 +8,12 @@ namespace ShackRemote.Core;
 /// </summary>
 public sealed class AppSettings
 {
+    /// <summary>Client: zuletzt gewählte Rolle ("server" oder "client").</summary>
     public string? Role { get; set; }
 
     /// <summary>Darstellung: "System", "Hell" oder "Dunkel".</summary>
     public string? Design { get; set; } = "System";
+    /// <summary>Rolle beim nächsten Start nicht mehr abfragen (änderbar mit Startparameter /rolle).</summary>
     public bool RememberRole { get; set; }
 
     /// <summary>Server: IPv4-Adressen, auf denen NICHT gelauscht werden soll.</summary>
@@ -25,6 +27,7 @@ public sealed class AppSettings
 
     /// <summary>Client: zuletzt geöffnete Ordner im Dateifenster.</summary>
     public string? FileLocalPath { get; set; }
+    /// <summary>Zuletzt geöffneter Ordner auf dem Shack-PC im Dateifenster.</summary>
     public string? FileRemotePath { get; set; }
 
     /// <summary>Client: bekannte (gekoppelte) Server.</summary>
@@ -62,6 +65,7 @@ public sealed class AppSettings
         lock (Gate) return read(Current);
     }
 
+    /// <summary>Einstellungen ändern und sofort speichern. Lädt vorher neu, weil Server und Client parallel schreiben können.</summary>
     public static void Update(Action<AppSettings> change)
     {
         lock (Gate)
@@ -109,17 +113,26 @@ public sealed class AppSettings
 
 }
 
+/// <summary>Server: ein gekoppeltes Gerät (Fingerabdruck des Client-Zertifikats).</summary>
 public sealed class TrustedClient
 {
+    /// <summary>SHA-256-Fingerabdruck des Zertifikats (hexadezimal).</summary>
     public string Fingerprint { get; set; } = "";
+    /// <summary>Rechnername zum Zeitpunkt der Kopplung (nur Anzeige).</summary>
     public string Name { get; set; } = "";
+    /// <summary>Zeitpunkt der Kopplung.</summary>
     public DateTime PairedAt { get; set; }
 }
 
+/// <summary>Client: ein gekoppelter Server mit seinem Zertifikat und den zuletzt bekannten Adressen (für die gezielte Suche).</summary>
 public sealed class KnownServer
 {
+    /// <summary>SHA-256-Fingerabdruck des Server-Zertifikats; wird bei jeder Verbindung geprüft.</summary>
     public string Fingerprint { get; set; } = "";
+    /// <summary>Rechnername des Servers.</summary>
     public string Name { get; set; } = "";
+    /// <summary>Vom Server angebotene Adressen; Ziele der gezielten Suche.</summary>
     public List<string> Addresses { get; set; } = new();
+    /// <summary>Letzte erfolgreiche Verbindung.</summary>
     public DateTime LastUsed { get; set; }
 }

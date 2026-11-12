@@ -13,10 +13,13 @@ public sealed class FilePane : UserControl
 {
     private const string InternalFormat = "ShackRemote.FilePaneItems";
 
+    /// <summary>Die angezeigte Seite (lokal oder Shack-PC).</summary>
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public IFileSide Side { get; }
+    /// <summary>Überschrift der Spalte ("Dieser PC" bzw. "Shack-PC").</summary>
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Title { get; }
+    /// <summary>Aktueller Ordner; "" = Laufwerksübersicht.</summary>
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string CurrentPath { get; private set; } = "";
 
@@ -28,10 +31,13 @@ public sealed class FilePane : UserControl
     private List<FsEntry> _driveCache = new();
     private bool _loading;
 
+    /// <summary>Spalte wurde angeklickt (wird zur aktiven Seite).</summary>
     public event Action? PaneActivated;
     /// <summary>Ziel, Quellseite (null = Windows-Explorer), Pfade, Zielordner (null = aktueller Ordner), Kopieren statt Verschieben.</summary>
     public event Action<FilePane, FilePane?, List<string>, string?, bool>? ItemsDropped;
+    /// <summary>Statusmeldungen (z. B. Ladezeiten der Laufwerke).</summary>
     public event Action<string>? Log;
+    /// <summary>Ordner gewechselt (wird in den Einstellungen gemerkt).</summary>
     public event Action<string>? PathChanged;
 
     private sealed record DragPayload(FilePane Source, List<string> Paths);
@@ -143,6 +149,7 @@ public sealed class FilePane : UserControl
         Controls.Add(layout);
     }
 
+    /// <summary>Tastaturfokus auf die Liste setzen.</summary>
     public void FocusList() => _list.Focus();
 
     /// <summary>Spaltenbreiten passend zur Skalierung; "Name" füllt den Rest.</summary>
@@ -351,6 +358,7 @@ public sealed class FilePane : UserControl
         _drives.SelectedIndex = -1;
     }
 
+    /// <summary>Dateigröße lesbar (B, KB, MB, GB).</summary>
     public static string FormatSize(long bytes) => bytes switch
     {
         < 1024 => $"{bytes} B",

@@ -6,7 +6,7 @@ namespace ShackRemote.UI;
 /// <summary>
 /// Sitzungsfenster: Bild des Shack-Monitors, oben Monitorumschaltung und Messwerte.
 /// Die Monitorknöpfe stehen in derselben Reihenfolge wie die Bildschirme beim Server (links nach rechts).
-/// Maus und Tastatur gehen an den Shack-PC (Stufe 1c); Strg+Alt+F1/F2/F3 wechselt lokal den Monitor.
+/// Maus und Tastatur gehen an den Shack-PC; Strg+Alt+F1/F2/F3 wechselt lokal den Monitor.
 /// </summary>
 public sealed class RemoteForm : Form
 {
@@ -69,6 +69,7 @@ public sealed class RemoteForm : Form
     private double _lastRtt;
     private string _encoder = "";
 
+    /// <summary>Meldungen für das Protokoll im Client-Fenster.</summary>
     public event Action<string>? Log;
 
     public RemoteForm(SessionClient session)

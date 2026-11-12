@@ -11,8 +11,10 @@ namespace ShackRemote.Core;
 /// </summary>
 public static class InputProtocol
 {
+    /// <summary>Nachrichtentypen (erstes Byte einer Input-Nachricht).</summary>
     public const byte MouseMove = 1, MouseButton = 2, MouseWheel = 3, Key = 4;
 
+    /// <summary>Mausbewegung; x/y 0..65535 relativ zum gezeigten Monitor.</summary>
     public static byte[] Move(ushort x, ushort y)
     {
         var b = new byte[5];
@@ -22,6 +24,7 @@ public static class InputProtocol
         return b;
     }
 
+    /// <summary>Maustaste (0 links, 1 rechts, 2 Mitte, 3/4 Seitentasten) gedrückt/losgelassen an Position x/y.</summary>
     public static byte[] Button(byte button, bool down, ushort x, ushort y)
     {
         var b = new byte[7];
@@ -33,6 +36,7 @@ public static class InputProtocol
         return b;
     }
 
+    /// <summary>Mausrad; Delta wie unter Windows (120 je Raste), horizontal = Kipprad.</summary>
     public static byte[] Wheel(short delta, bool horizontal)
     {
         var b = new byte[4];
@@ -42,6 +46,7 @@ public static class InputProtocol
         return b;
     }
 
+    /// <summary>Taste mit virtuellem Tastencode und Scancode; extended für Pfeil-, Einfg-, Entf-Tasten usw.</summary>
     public static byte[] KeyEvent(ushort vk, ushort scan, bool up, bool extended)
     {
         var b = new byte[6];

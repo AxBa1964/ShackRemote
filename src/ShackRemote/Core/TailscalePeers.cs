@@ -12,8 +12,10 @@ namespace ShackRemote.Core;
 /// </summary>
 public static class TailscalePeers
 {
+    /// <summary>Ein Gerät im Tailscale-Netz mit Namen und IPv4-Adresse.</summary>
     public sealed record Peer(string Name, IPAddress Address);
 
+    /// <summary>Fragt "tailscale status --json" ab und liefert alle Geräte, die gerade online sind (höchstens 4 s).</summary>
     public static async Task<List<Peer>> OnlineAsync(Action<string>? log = null)
     {
         var result = new List<Peer>();

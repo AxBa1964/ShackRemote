@@ -14,26 +14,40 @@ public enum AppTheme { System, Light, Dark }
 /// </summary>
 internal static class Theme
 {
+    /// <summary>true, wenn die dunkle Darstellung aktiv ist.</summary>
     public static bool IsDark { get; private set; }
 
     // ---- Farbpalette (wird in Init gesetzt) ---------------------------------------------------
-    public static Color Window { get; private set; } = Color.White;           // Listen, Eingabefelder, Karten
-    public static Color Surface { get; private set; } = Color.FromArgb(243, 243, 243);   // Fensterhintergrund, Leisten
+    /// <summary>Farbpalette, wird von Init je nach Hell/Dunkel gesetzt. Window: Listen, Eingabefelder, Karten.</summary>
+    public static Color Window { get; private set; } = Color.White;
+    /// <summary>Fensterhintergrund und Leisten.</summary>
+    public static Color Surface { get; private set; } = Color.FromArgb(243, 243, 243);
+    /// <summary>Normale Schrift.</summary>
     public static Color Text { get; private set; } = Color.FromArgb(27, 27, 27);
+    /// <summary>Gedämpfte Schrift (Hinweise, Untertitel).</summary>
     public static Color SubtleText { get; private set; } = Color.FromArgb(96, 96, 96);
+    /// <summary>Rahmenlinien.</summary>
     public static Color Border { get; private set; } = Color.FromArgb(225, 225, 225);
+    /// <summary>Hintergrund unter dem Mauszeiger.</summary>
     public static Color Hover { get; private set; } = Color.FromArgb(230, 230, 230);
+    /// <summary>Hintergrund beim Drücken.</summary>
     public static Color Pressed { get; private set; } = Color.FromArgb(215, 215, 215);
-    public static Color Accent { get; private set; } = Color.FromArgb(0, 103, 192);      // Windows-11-Standardblau
+    /// <summary>Akzentfarbe für Hauptknöpfe (Windows-11-Blau).</summary>
+    public static Color Accent { get; private set; } = Color.FromArgb(0, 103, 192);
+    /// <summary>Akzentfarbe unter dem Mauszeiger.</summary>
     public static Color AccentHover { get; private set; } = Color.FromArgb(25, 117, 197);
+    /// <summary>Schrift auf Akzentflächen.</summary>
     public static Color AccentText { get; private set; } = Color.White;
-    public static Color Highlight { get; private set; } = Color.FromArgb(255, 244, 206); // Hinweisflächen (Kopplungscode)
+    /// <summary>Hinweisflächen (Kopplungscode).</summary>
+    public static Color Highlight { get; private set; } = Color.FromArgb(255, 244, 206);
 
     // Symbole (Segoe Fluent Icons / Segoe MDL2 Assets; Codes laut Microsoft-Liste)
+    /// <summary>Symbolzeichen der Windows-Symbolschrift (Segoe Fluent Icons bzw. Segoe MDL2 Assets).</summary>
     public const char Up = '', Refresh = '', Copy = '', Move = '', NewFolder = '',
                       Rename = '', Delete = '', Cancel = '', Folder = '', Forward = '',
                       Back = '', Sync = '', Check = '', Document = '';
 
+    /// <summary>Verfügbare Symbolschrift: Segoe Fluent Icons (Windows 11) oder Segoe MDL2 Assets.</summary>
     public static string IconFontName { get; } =
         new InstalledFontCollection().Families.Any(f => f.Name == "Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
 
@@ -65,6 +79,7 @@ internal static class Theme
         Highlight = Color.FromArgb(60, 52, 20);
     }
 
+    /// <summary>Gespeicherten Namen ("System", "Hell", "Dunkel") in AppTheme umwandeln.</summary>
     public static AppTheme Parse(string? s) => s switch
     {
         "Hell" => AppTheme.Light,
@@ -72,6 +87,7 @@ internal static class Theme
         _ => AppTheme.System,
     };
 
+    /// <summary>Anzeigename einer Darstellung.</summary>
     public static string Name(AppTheme t) => t switch
     {
         AppTheme.Light => "Hell",
@@ -344,6 +360,7 @@ internal sealed class ModernDialog : Form
         };
     }
 
+    /// <summary>Fragt einen Text ab; null bei Abbruch.</summary>
     public static string? Ask(IWin32Window owner, string title, string message, string initial = "")
     {
         using var d = new ModernDialog(title, message, initial,
@@ -351,6 +368,7 @@ internal sealed class ModernDialog : Form
         return d.ShowDialog(owner) == DialogResult.OK ? d._input!.Text : null;
     }
 
+    /// <summary>Meldung mit frei wählbaren Knöpfen (Text, Ergebnis, Hauptknopf).</summary>
     public static DialogResult Show(IWin32Window owner, string title, string message,
         params (string Text, DialogResult Result, bool Primary)[] buttons)
     {

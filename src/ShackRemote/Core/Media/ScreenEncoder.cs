@@ -4,8 +4,13 @@ using FFmpeg.AutoGen;
 namespace ShackRemote.Core.Media;
 
 /// <summary>
-/// Server: Aufnahme und Kodierung im eigenen Prozess, alles auf der GPU:
-/// ddagrab (Desktop Duplication, D3D11-Textur) -> hwmap nach QSV -> h264_qsv.
+/// Server: Aufnahme und Kodierung im eigenen Prozess, möglichst komplett auf der Grafikkarte.
+/// Aufnahme immer mit ddagrab (Desktop Duplication, D3D11-Textur), dann je nach Grafikkarte:
+///   Intel:  hwmap nach QSV -> h264_qsv
+///   NVIDIA: D3D11-Bilder direkt -> h264_nvenc
+///   AMD:    D3D11-Bilder direkt -> h264_amf
+///   sonst:  hwdownload -> yuv420p -> libx264 (Prozessor, letzte Rettung)
+/// Welcher Encoder auf welcher Grafikkarte funktioniert, wird gemerkt (Working); /encoder= erzwingt einen (Forced).
 ///
 /// Drei Threads wie bei ffmpeg.exe: Aufnahme -> Kodieren -> Senden.
 /// Zwischen Aufnahme und Encoder liegt genau ein Platz: Ist der Encoder noch beschäftigt, ersetzt das neue Bild
@@ -44,8 +49,11 @@ public sealed unsafe class ScreenEncoder : IDisposable
 
     /// <summary>Kodiertes Paket (Annex B, SPS/PPS vor jedem Schlüsselbild) und ob es ein Schlüsselbild ist.</summary>
     public event Action<byte[], bool>? PacketReady;
-    public event Action<int, int>? Started;      // Breite, Höhe
+    /// <summary>Bildstrom läuft; Breite und Höhe des Monitors.</summary>
+    public event Action<int, int>? Started;
+    /// <summary>Meldungen für das Protokoll (u. a. Bildraten alle 5 s).</summary>
     public event Action<string>? Log;
+    /// <summary>Aufnahme/Kodierung ausgefallen; der VideoChannel versucht dann einen Neustart.</summary>
     public event Action<string>? Failed;
 
     public ScreenEncoder(MonitorInfo monitor, int fps)
@@ -55,12 +63,14 @@ public sealed unsafe class ScreenEncoder : IDisposable
         _captureThread = new Thread(CaptureLoop) { IsBackground = true, Name = $"Aufnahme Monitor {monitor.Index}", Priority = ThreadPriority.AboveNormal };
     }
 
+    /// <summary>Aufnahme-Thread starten (öffnet Filtergraph und Encoder im Thread).</summary>
     public void Start()
     {
         FfmpegLib.EnsureLoaded();
         _captureThread.Start();
     }
 
+    /// <summary>Nächstes Bild als Schlüsselbild (IDR) kodieren.</summary>
     public void RequestKeyframe() => Interlocked.Exchange(ref _keyframeRequested, 1);
 
     // ---- Aufnahme-Thread ------------------------------------------------------------------------
@@ -170,6 +180,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
         _ => new[] { EncoderKind.IntelQuickSync, EncoderKind.NvidiaNvenc, EncoderKind.AmdAmf, EncoderKind.Software },
     };
 
+    /// <summary>Lesbarer Name eines Encoders für Anzeige und Protokoll.</summary>
     public static string Describe(EncoderKind kind) => kind switch
     {
         EncoderKind.IntelQuickSync => "Intel Quick Sync (h264_qsv)",
@@ -184,6 +195,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
     /// <summary>Zum Testen erzwungener Encoder (Startparameter /encoder=qsv|nvenc|amf|cpu), sonst null.</summary>
     public static EncoderKind? Forced { get; set; }
 
+    /// <summary>Startparameter /encoder= auswerten (qsv, nvenc, amf, x264/cpu/software); null = automatisch.</summary>
     public static EncoderKind? Parse(string? text) => text?.ToLowerInvariant() switch
     {
         "qsv" => EncoderKind.IntelQuickSync,
@@ -467,6 +479,7 @@ public sealed unsafe class ScreenEncoder : IDisposable
         public IntPtr Loader;
     }
 
+    /// <summary>Threads beenden (höchstens 4 s warten) und FFmpeg-Objekte freigeben.</summary>
     public void Dispose()
     {
         _stop = true;

@@ -30,10 +30,15 @@ public sealed class SessionServer : IDisposable
     /// <summary>Bildrate der Aufnahme. 60 fps wurden in Stufe 0 auf dem N100 erreicht (54–57 fps).</summary>
     public int VideoFps { get; set; } = 60;
 
+    /// <summary>Meldungen für Protokoll bzw. agent.log.</summary>
     public event Action<string>? Log;
-    public event Action<string, string>? PairingCodeShown;   // Code, Client-Name
+    /// <summary>Neuer Kopplungscode für die Anzeige am Shack-PC (Code, Name des Clients).</summary>
+    public event Action<string, string>? PairingCodeShown;
+    /// <summary>Kopplungsversuch beendet (Code ausblenden).</summary>
     public event Action? PairingEnded;
+    /// <summary>Client verbunden (Name und Adresse).</summary>
     public event Action<string>? ClientConnected;
+    /// <summary>Client getrennt.</summary>
     public event Action? ClientDisconnected;
 
     public SessionServer(X509Certificate2 cert)
@@ -42,6 +47,7 @@ public sealed class SessionServer : IDisposable
         _fingerprint = Identity.Fingerprint(cert);
     }
 
+    /// <summary>Lauscht auf TCP 47101 an den angegebenen Adressen (vorherige Listener werden beendet).</summary>
     public void Start(IEnumerable<IPAddress> addresses)
     {
         Stop();
@@ -62,6 +68,7 @@ public sealed class SessionServer : IDisposable
         }
     }
 
+    /// <summary>Alle Listener beenden.</summary>
     public void Stop()
     {
         _cts.Cancel();
@@ -327,7 +334,8 @@ public sealed class SessionServer : IDisposable
 
     /// <summary>
     /// Bildkanal einer Sitzung. Verliert Windows die Bildschirmaufnahme (z. B. Sperrbildschirm, Monitor-Standby,
-    /// Auflösungswechsel, UAC: DXGI_ERROR_ACCESS_LOST), wird sie alle 2 s neu aufgebaut, bis es wieder geht.
+    /// Auflösungswechsel, UAC: DXGI_ERROR_ACCESS_LOST), wird sie neu aufgebaut, bis es wieder geht
+    /// (die ersten drei Versuche nach 0,3 s, danach alle 2 s).
     /// </summary>
     private static string MonitorSignature(List<MonitorInfo>? list) =>
         list is null ? "" : string.Join("|", list.Select(m => $"{m.Adapter}/{m.Output}/{m.Left},{m.Top}/{m.Width}x{m.Height}/{m.Primary}"));
@@ -356,6 +364,7 @@ public sealed class SessionServer : IDisposable
             _log = log;
         }
 
+        /// <summary>Bildstrom für den Monitor mit dieser DXGI-Ausgangsnummer starten (ein laufender wird ersetzt).</summary>
         public void Start(int output)
         {
             lock (_gate)
@@ -368,16 +377,19 @@ public sealed class SessionServer : IDisposable
             }
         }
 
+        /// <summary>Nächstes Bild als Schlüsselbild kodieren.</summary>
         public void RequestKeyframe()
         {
             lock (_gate) _encoder?.RequestKeyframe();
         }
 
+        /// <summary>Laufenden Bildstrom beenden.</summary>
         public void Stop()
         {
             lock (_gate) StopLocked();
         }
 
+        /// <summary>Wie Stop.</summary>
         public void Dispose() => Stop();
 
         private void StopLocked()
@@ -457,5 +469,6 @@ public sealed class SessionServer : IDisposable
         }
     }
 
+    /// <summary>Wie Stop.</summary>
     public void Dispose() => Stop();
 }

@@ -4,8 +4,10 @@ using System.Net.Sockets;
 
 namespace ShackRemote.Core;
 
+/// <summary>Art eines Netzwerkadapters, für Anzeige und Hinweise.</summary>
 public enum NetKind { LAN, WLAN, Tailscale, Sonstige }
 
+/// <summary>Eine IPv4-Adresse dieses Rechners mit Broadcast-Adresse (null bei Tailscale/Punkt-zu-Punkt), Art und Adaptername.</summary>
 public sealed record LocalAddress(IPAddress Address, IPAddress? Broadcast, NetKind Kind, string InterfaceName)
 {
     public override string ToString() =>
@@ -17,6 +19,7 @@ public sealed record LocalAddress(IPAddress Address, IPAddress? Broadcast, NetKi
 /// <summary>Ermittelt die IPv4-Adressen dieses Rechners und ordnet sie WLAN / LAN / Tailscale zu.</summary>
 public static class NetInfo
 {
+    /// <summary>Alle aktiven IPv4-Adressen ohne Loopback und ohne APIPA (169.254.x.x).</summary>
     public static List<LocalAddress> GetAll()
     {
         var result = new List<LocalAddress>();

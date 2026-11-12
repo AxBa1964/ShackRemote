@@ -20,22 +20,35 @@ public sealed class SessionClient : IAsyncDisposable
     private readonly System.Threading.Channels.Channel<byte[]> _input =
         System.Threading.Channels.Channel.CreateUnbounded<byte[]>(new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
 
-    public event Action<double>? RoundTripMeasured;   // Millisekunden
+    /// <summary>Gemessene Umlaufzeit in Millisekunden (Ping jede Sekunde).</summary>
+    public event Action<double>? RoundTripMeasured;
+    /// <summary>Verbindung verloren; Argument ist der Grund.</summary>
     public event Action<string>? Disconnected;
-    public event Action<byte[], bool>? VideoData;      // H.264-Paket, Schlüsselbild?
-    public event Action<int>? VideoReset;            // Monitor
-    public event Action<int, int, string?>? VideoInfo;   // Breite, Höhe, Encoder
+    /// <summary>H.264-Paket; bool = Schlüsselbild. Läuft im Empfangs-Thread.</summary>
+    public event Action<byte[], bool>? VideoData;
+    /// <summary>Server beginnt einen neuen Bildstrom (Monitorwechsel); Argument = Monitor.</summary>
+    public event Action<int>? VideoReset;
+    /// <summary>Bildgröße beim Server und verwendeter Encoder.</summary>
+    public event Action<int, int, string?>? VideoInfo;
+    /// <summary>Server kann kein Bild liefern (Text = Ursache).</summary>
     public event Action<string>? VideoError;
-    public event Action<byte[]>? AudioData;          // Opus-Paket
-    public event Action<byte[]>? FileData;           // Dateizugriff (FileProtocol)
-    public event Action<string>? Info;              // Rückmeldung des Servers (z. B. "Strg+Alt+Entf ausgelöst")
+    /// <summary>Opus-Paket (10 ms Ton).</summary>
+    public event Action<byte[]>? AudioData;
+    /// <summary>Nachricht des Dateizugriffs (siehe FileProtocol).</summary>
+    public event Action<byte[]>? FileData;
+    /// <summary>Rückmeldung des Servers, z. B. "Strg+Alt+Entf ausgelöst".</summary>
+    public event Action<string>? Info;
 
+    /// <summary>Rechnername des Servers aus der Welcome-Nachricht.</summary>
     public string ServerName { get; private set; } = "";
+    /// <summary>Fingerabdruck des Server-Zertifikats (SHA-256, hexadezimal).</summary>
     public string ServerFingerprint { get; private set; } = "";
+    /// <summary>Monitore des Servers; wird bei MonitorsChanged ersetzt.</summary>
     public List<MonitorInfo> Monitors { get; private set; } = new();
 
     /// <summary>Server meldet geänderte Monitore (ein-/ausgesteckt). Läuft im Empfangs-Thread.</summary>
     public event Action<List<MonitorInfo>>? MonitorsChanged;
+    /// <summary>Tonquellen des Servers (Wiedergabe-Loopback und Aufnahmegeräte).</summary>
     public List<AudioDevice> AudioDevices { get; private set; } = new();
 
     public SessionClient(X509Certificate2 cert)
@@ -172,6 +185,7 @@ public sealed class SessionClient : IAsyncDisposable
         }
     }
 
+    /// <summary>Bild des angegebenen Monitors (MonitorInfo.Index) anfordern.</summary>
     public Task StartVideoAsync(int monitor) =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StartVideo", Monitor = monitor }, _cts.Token);
 
@@ -200,17 +214,22 @@ public sealed class SessionClient : IAsyncDisposable
     public Task StartAudioAsync(string deviceId) =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StartAudio", Text = deviceId }, _cts.Token);
 
+    /// <summary>Tonübertragung beenden.</summary>
     public Task StopAudioAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StopAudio" }, _cts.Token);
 
+    /// <summary>Nachricht des Dateizugriffs senden.</summary>
     public Task SendFileAsync(byte[] payload) => _conn!.SendAsync(MsgType.File, payload, _cts.Token);
 
+    /// <summary>Schlüsselbild anfordern (z. B. nach Paketverlust oder Fehler im Decoder).</summary>
     public Task RequestKeyframeAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "RequestKeyframe" }, _cts.Token);
 
+    /// <summary>Bildübertragung beenden.</summary>
     public Task StopVideoAsync() =>
         _conn!.SendControlAsync(new ControlMessage { Type = "StopVideo" }, _cts.Token);
 
+    /// <summary>Verbindung schließen und Hintergrundaufgaben beenden.</summary>
     public async ValueTask DisposeAsync()
     {
         _cts.Cancel();

@@ -5,7 +5,7 @@ using ShackRemote.Core;
 
 namespace ShackRemote.UI;
 
-/// <summary>Client-Fenster (Laptop): Server suchen, auswählen, verbinden. Bild folgt in Stufe 1b.</summary>
+/// <summary>Client-Fenster (Laptop): Server suchen (Heimnetz, bekannte Adressen, Tailscale), auswählen, verbinden und koppeln; öffnet danach das Fernsteuerungsfenster.</summary>
 public sealed class ClientForm : Form
 {
     private readonly X509Certificate2 _cert;

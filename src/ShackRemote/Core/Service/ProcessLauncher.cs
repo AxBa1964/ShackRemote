@@ -11,6 +11,7 @@ namespace ShackRemote.Core.Service;
 /// </summary>
 public static class ProcessLauncher
 {
+    /// <summary>Rückgabe von WTSGetActiveConsoleSessionId, wenn gerade keine Konsolensitzung existiert.</summary>
     public const uint NoSession = 0xFFFFFFFF;
 
     /// <summary>Sitzung, die gerade an Bildschirm/Tastatur des PCs hängt.</summary>

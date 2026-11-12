@@ -9,6 +9,7 @@ public static unsafe class DxgiOutputs
 {
     private const uint DXGI_ADAPTER_FLAG_SOFTWARE = 2;
 
+    /// <summary>Alle Monitore aller Grafikkarten; Index = laufende Nummer für StartVideo.</summary>
     public static List<MonitorInfo> List()
     {
         var result = new List<MonitorInfo>();

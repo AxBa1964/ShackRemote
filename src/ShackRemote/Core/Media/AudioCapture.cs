@@ -12,6 +12,7 @@ namespace ShackRemote.Core.Media;
 /// </summary>
 public sealed unsafe class AudioCapture : IDisposable
 {
+    /// <summary>Geräte-Id für "was das Standard-Wiedergabegerät abspielt" (Loopback).</summary>
     public const string DefaultPlaybackId = "";
     private const int Rate = 48000;
 
@@ -25,8 +26,11 @@ public sealed unsafe class AudioCapture : IDisposable
     private float _lastL, _lastR;
     private bool _stopped;
 
+    /// <summary>Fertiges Opus-Paket (10 ms Ton); läuft im Aufnahme-Thread.</summary>
     public event Action<byte[]>? PacketReady;
+    /// <summary>Meldungen für das Protokoll.</summary>
     public event Action<string>? Log;
+    /// <summary>Aufnahme ist ausgefallen (z. B. Gerät entfernt).</summary>
     public event Action<string>? Failed;
 
     public AudioCapture(string deviceId) => _deviceId = deviceId;
@@ -46,6 +50,7 @@ public sealed unsafe class AudioCapture : IDisposable
         return list;
     }
 
+    /// <summary>Gerät öffnen und Aufnahme starten.</summary>
     public void Start()
     {
         FfmpegLib.EnsureLoaded();
@@ -175,6 +180,7 @@ public sealed unsafe class AudioCapture : IDisposable
         }
     }
 
+    /// <summary>Aufnahme beenden und Encoder freigeben.</summary>
     public void Dispose()
     {
         lock (_gate) _stopped = true;

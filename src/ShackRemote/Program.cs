@@ -5,6 +5,7 @@ using ShackRemote.UI;
 
 namespace ShackRemote;
 
+/// <summary>Einstiegspunkt: wertet die Startparameter aus und öffnet das passende Fenster (siehe Main).</summary>
 internal static class Program
 {
     /// <summary>
@@ -18,7 +19,7 @@ internal static class Program
     ///   /dienst-entfernen     - Dienst entfernen (braucht Adminrechte; Knopf im Server-Fenster)
     ///   /dienst-adressen      - Adressauswahl des Benutzers in den Dienst übernehmen, Dienst neu starten (Adminrechte)
     ///   /kopplung-entfernen=FP - gekoppeltes Gerät entfernen, beim Dienst und beim Benutzer (Adminrechte)
-    ///   /still                - zusammen mit den beiden oberen: ohne Erfolgsmeldung (für das Setup)
+    ///   /still                - zusammen mit /dienst-installieren oder /dienst-entfernen: ohne Erfolgsmeldung (für das Setup)
     ///   /encoder=X            - Test: Encoder erzwingen (qsv, nvenc, amf, cpu), ohne Rückfall
     /// </summary>
     [STAThread]

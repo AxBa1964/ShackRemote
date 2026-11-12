@@ -12,9 +12,12 @@ namespace ShackRemote.Core;
 /// </summary>
 public static class FileProtocol
 {
+    /// <summary>Erstes Byte einer File-Nachricht: JSON-Anfrage/-Antwort oder Datenblock.</summary>
     public const byte Json = 1, Chunk = 2;
+    /// <summary>Größe eines Datenblocks bei Übertragungen (64 KB).</summary>
     public const int ChunkSize = 64 * 1024;
 
+    /// <summary>JSON-Nachricht verpacken: [Json][UTF-8-JSON].</summary>
     public static byte[] Build(FsMessage m)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(m);
@@ -24,6 +27,7 @@ public static class FileProtocol
         return b;
     }
 
+    /// <summary>Datenblock verpacken: [Chunk][Transfer-Nr. Int32 LE][Daten].</summary>
     public static byte[] BuildChunk(int transfer, ReadOnlySpan<byte> data)
     {
         var b = new byte[5 + data.Length];
@@ -33,31 +37,47 @@ public static class FileProtocol
         return b;
     }
 
+    /// <summary>JSON-Nachricht auspacken (null bei fremdem Inhalt).</summary>
     public static FsMessage? ParseJson(byte[] payload) =>
         JsonSerializer.Deserialize<FsMessage>(payload.AsSpan(1));
 
+    /// <summary>Transfer-Nummer aus einem Datenblock lesen.</summary>
     public static int ChunkTransfer(byte[] payload) => BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(1));
 }
 
+/// <summary>Anfrage oder Antwort des Dateizugriffs. Op: Drives, List, Mkdir, Delete, Rename, Copy, Download/DownloadEnd, Upload/UploadEnd, Cancel; Antworten mit Op = Result. Id ordnet Antworten Anfragen zu, Transfer kennzeichnet eine Übertragung.</summary>
 public sealed class FsMessage
 {
+    /// <summary>Art der Anfrage bzw. "Result" für eine Antwort.</summary>
     public string Op { get; set; } = "";
     public int Id { get; set; }
     public int Transfer { get; set; }
+    /// <summary>Pfad auf der Seite des Empfängers (bei Rename/Copy: Quelle).</summary>
     public string? Path { get; set; }
+    /// <summary>Zweiter Pfad (Ziel bei Rename/Copy).</summary>
     public string? Path2 { get; set; }
+    /// <summary>Antwort: erfolgreich?</summary>
     public bool Ok { get; set; }
+    /// <summary>Antwort: Fehlermeldung im Klartext.</summary>
     public string? Text { get; set; }
+    /// <summary>Dateigröße (bei Download-Antwort und Upload).</summary>
     public long Size { get; set; }
+    /// <summary>Upload/Copy: vorhandene Datei überschreiben.</summary>
     public bool Overwrite { get; set; }
+    /// <summary>Antwort auf Drives/List.</summary>
     public List<FsEntry>? Entries { get; set; }
 }
 
+/// <summary>Eintrag einer Ordnerliste bzw. ein Laufwerk.</summary>
 public sealed class FsEntry
 {
+    /// <summary>Datei-/Ordnername bzw. Laufwerk ("C:\").</summary>
     public string Name { get; set; } = "";
+    /// <summary>true = Ordner bzw. Laufwerk.</summary>
     public bool Dir { get; set; }
+    /// <summary>Größe in Byte (Dateien).</summary>
     public long Size { get; set; }
+    /// <summary>Letzte Änderung.</summary>
     public DateTime Modified { get; set; }
     /// <summary>Nur bei Laufwerken: Bezeichnung und Art, z. B. "Daten (Festplatte)".</summary>
     public string? Info { get; set; }
@@ -141,6 +161,7 @@ public static class FsOps
         _ => t.ToString(),
     };
 
+    /// <summary>Ordnerinhalt lesen; nicht lesbare Einträge werden übersprungen.</summary>
     public static List<FsEntry> List(string path)
     {
         var dir = new DirectoryInfo(path);
@@ -158,6 +179,7 @@ public static class FsOps
         return list;
     }
 
+    /// <summary>Datei oder Ordner (rekursiv) endgültig löschen, ohne Papierkorb.</summary>
     public static void Delete(string path)
     {
         if (Directory.Exists(path)) Directory.Delete(path, recursive: true);

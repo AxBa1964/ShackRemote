@@ -11,6 +11,10 @@ ein Setup für beide Rechner, beim Start Rolle wählen (Server = Shack-PC, Clien
 
 Download, Anleitung und Beschreibung: https://dk7ee.de/shackremote.php
 
+**Projektdokumentation** (für Übernahme und Weiterentwicklung):
+- [Fachliche Projektbeschreibung](docs/Fachliche-Projektbeschreibung.md) – Ziele, Funktionen, Abläufe, Entscheidungen, offene Wünsche
+- [Technische Projektbeschreibung](docs/Technische-Projektbeschreibung.md) – Architektur, Protokoll, Pipelines, Dienst, Build, Diagnose
+
 ## Zielsystem
 
 | Rechner | Hardware | Rolle |

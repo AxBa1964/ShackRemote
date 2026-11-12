@@ -5,7 +5,9 @@ public sealed class RoleForm : Form
 {
     private readonly CheckBox _remember;
 
+    /// <summary>Gewählte Rolle ("server" oder "client"); null bei Abbruch.</summary>
     public string? Role { get; private set; }
+    /// <summary>Haken "Beim nächsten Start nicht mehr fragen".</summary>
     public bool Remember => _remember.Checked;
 
     public RoleForm()

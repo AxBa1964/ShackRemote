@@ -97,6 +97,7 @@ public sealed class InputDialog : Form
             : null;
     }
 
+    /// <summary>Fragt einen Text ab (z. B. Ordnername); null bei Abbruch.</summary>
     public static string? Ask(IWin32Window owner, string title, string prompt, string initial = "")
     {
         using var dlg = new InputDialog(title, prompt);

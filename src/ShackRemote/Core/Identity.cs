@@ -5,10 +5,11 @@ namespace ShackRemote.Core;
 
 /// <summary>
 /// Eigenes, selbst signiertes Zertifikat dieses Rechners (für Server- und Client-Rolle gleich).
-/// Gespeichert als %APPDATA%\ShackRemote\identity.pfx.
+/// Gespeichert als identity.pfx im Einstellungsordner: %APPDATA%\ShackRemote, im Dienstbetrieb C:\ProgramData\ShackRemote.
 /// </summary>
 public static class Identity
 {
+    /// <summary>Lädt das eigene Zertifikat (identity.pfx) oder erzeugt beim ersten Start ein neues selbst signiertes.</summary>
     public static X509Certificate2 LoadOrCreate()
     {
         var path = Path.Combine(AppSettings.Folder, "identity.pfx");

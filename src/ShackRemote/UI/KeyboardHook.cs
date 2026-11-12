@@ -47,6 +47,7 @@ public sealed class KeyboardHook : IDisposable
         return CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
+    /// <summary>Haken wieder entfernen.</summary>
     public void Dispose()
     {
         if (_hook != IntPtr.Zero)

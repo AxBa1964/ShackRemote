@@ -14,9 +14,13 @@ public sealed class RemoteFs : IDisposable
 
     private sealed class Download
     {
+        /// <summary>Zieldatei auf dem Laptop.</summary>
         public required FileStream Target;
+        /// <summary>Wird mit der Abschlussnachricht erfüllt.</summary>
         public required TaskCompletionSource<FsMessage> Done;
+        /// <summary>Fortschritt in Byte.</summary>
         public Action<long>? Progress;
+        /// <summary>Bisher empfangene Byte.</summary>
         public long Received;
     }
 
@@ -26,6 +30,7 @@ public sealed class RemoteFs : IDisposable
         _session.FileData += OnData;
     }
 
+    /// <summary>Meldet sich von den Dateinachrichten der Sitzung ab.</summary>
     public void Dispose() => _session.FileData -= OnData;
 
     // ---- Aus der Leseschleife --------------------------------------------------------------------
@@ -68,11 +73,17 @@ public sealed class RemoteFs : IDisposable
         return reply;
     }
 
+    /// <summary>Laufwerke des Shack-PCs.</summary>
     public async Task<List<FsEntry>> DrivesAsync() => (await RequestAsync(new FsMessage { Op = "Drives" })).Entries ?? new();
+    /// <summary>Ordnerinhalt auf dem Shack-PC.</summary>
     public async Task<List<FsEntry>> ListAsync(string path) => (await RequestAsync(new FsMessage { Op = "List", Path = path })).Entries ?? new();
+    /// <summary>Ordner auf dem Shack-PC anlegen.</summary>
     public Task MkdirAsync(string path) => RequestAsync(new FsMessage { Op = "Mkdir", Path = path });
+    /// <summary>Datei/Ordner auf dem Shack-PC löschen.</summary>
     public Task DeleteAsync(string path) => RequestAsync(new FsMessage { Op = "Delete", Path = path });
+    /// <summary>Auf dem Shack-PC umbenennen bzw. verschieben.</summary>
     public Task RenameAsync(string from, string to) => RequestAsync(new FsMessage { Op = "Rename", Path = from, Path2 = to });
+    /// <summary>Auf dem Shack-PC kopieren (innerhalb des Shack-PCs).</summary>
     public Task CopyAsync(string from, string to) => RequestAsync(new FsMessage { Op = "Copy", Path = from, Path2 = to });
 
     /// <summary>Datei vom Shack-PC holen. progress: bisher empfangene Bytes.</summary>

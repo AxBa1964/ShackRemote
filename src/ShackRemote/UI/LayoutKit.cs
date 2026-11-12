@@ -105,6 +105,7 @@ internal static class LayoutKit
         return t;
     }
 
+    /// <summary>Einheitliches Beschriftungsfeld.</summary>
     public static Label MakeLabel(string text, bool bold = false) => new()
     {
         Text = text,
@@ -113,6 +114,7 @@ internal static class LayoutKit
         Font = bold ? new Font("Segoe UI", 10F, FontStyle.Bold) : null,
     };
 
+    /// <summary>Einheitlicher Knopf (Größe passt sich dem Text an).</summary>
     public static Button MakeButton(string text) => new()
     {
         Text = text,
@@ -123,6 +125,7 @@ internal static class LayoutKit
         Margin = new Padding(3, 3, 3, 6),
     };
 
+    /// <summary>Mehrzeiliges, schreibgeschütztes Protokollfeld in Festbreitenschrift.</summary>
     public static TextBox LogBox() => new()
     {
         Dock = DockStyle.Fill,

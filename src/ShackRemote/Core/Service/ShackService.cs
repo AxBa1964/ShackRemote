@@ -12,6 +12,7 @@ namespace ShackRemote.Core.Service;
 /// </summary>
 public sealed class ShackService : ServiceBase
 {
+    /// <summary>Dienstname in der Windows-Diensteverwaltung.</summary>
     public const string Name = "ShackRemote";
     /// <summary>Ereignis, über das der Agent Strg+Alt+Entf anfordert.</summary>
     public const string SasEventName = @"Global\ShackRemote_SAS";

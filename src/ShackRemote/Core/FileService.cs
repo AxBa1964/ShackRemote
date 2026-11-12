@@ -146,6 +146,7 @@ public sealed class FileService : IDisposable
 
     private Task Send(FsMessage m) => _conn.SendAsync(MsgType.File, FileProtocol.Build(m));
 
+    /// <summary>Bricht laufende Übertragungen ab und schließt offene Dateien.</summary>
     public void Dispose()
     {
         foreach (var c in _downloads.Values) c.Cancel();

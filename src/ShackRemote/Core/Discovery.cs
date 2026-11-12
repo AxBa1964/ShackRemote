@@ -5,6 +5,7 @@ using System.Text.Json;
 
 namespace ShackRemote.Core;
 
+/// <summary>Gefundener Server: seine Selbstauskunft und die Adresse, von der die Antwort kam.</summary>
 public sealed record FoundServer(ServerInfo Info, IPAddress RespondedFrom);
 
 /// <summary>Server: beantwortet Suchanfragen auf UDP 47100 (IPv4, alle Adapter).</summary>
@@ -14,10 +15,12 @@ public sealed class DiscoveryResponder : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private UdpClient? _udp;
 
+    /// <summary>Meldungen für das Protokoll.</summary>
     public event Action<string>? Log;
 
     public DiscoveryResponder(Func<ServerInfo> info) => _info = info;
 
+    /// <summary>Beginnt auf UDP 47100 (IPv4) auf Suchanfragen zu antworten.</summary>
     public void Start()
     {
         // Ausdrücklich IPv4 (0.0.0.0) – siehe Stufe 0: "@" bzw. Standard landet unter Windows auf IPv6.
@@ -46,6 +49,7 @@ public sealed class DiscoveryResponder : IDisposable
         }
     }
 
+    /// <summary>Beendet das Antworten und gibt den UDP-Port frei.</summary>
     public void Dispose()
     {
         _cts.Cancel();
@@ -56,6 +60,7 @@ public sealed class DiscoveryResponder : IDisposable
 /// <summary>Client: sucht Server per Broadcast in allen eigenen Netzen und fragt bekannte Adressen gezielt an.</summary>
 public static class DiscoveryClient
 {
+    /// <summary>Sucht Server: Broadcast in alle lokalen Netze mit Broadcast-Adresse plus gezielte Anfragen an <paramref name="unicastTargets"/> (bekannte Adressen, Tailscale-Geräte). Sammelt Antworten bis <paramref name="timeout"/>.</summary>
     public static async Task<List<FoundServer>> SearchAsync(IEnumerable<IPAddress> unicastTargets, TimeSpan timeout, Action<string>? log = null)
     {
         var found = new Dictionary<string, FoundServer>(StringComparer.OrdinalIgnoreCase);
