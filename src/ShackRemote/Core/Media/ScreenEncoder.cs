@@ -4,7 +4,7 @@ using FFmpeg.AutoGen;
 namespace ShackRemote.Core.Media;
 
 /// <summary>
-/// Server: Aufnahme und Kodierung im eigenen Prozess, alles auf der GPU (wie Sunshine/Parsec):
+/// Server: Aufnahme und Kodierung im eigenen Prozess, alles auf der GPU:
 /// ddagrab (Desktop Duplication, D3D11-Textur) -> hwmap nach QSV -> h264_qsv.
 ///
 /// Drei Threads wie bei ffmpeg.exe: Aufnahme -> Kodieren -> Senden.

@@ -79,7 +79,7 @@ public sealed class SessionClient : IAsyncDisposable
         {
             var code = await askCode(Identity.Short(ServerFingerprint));
             if (string.IsNullOrWhiteSpace(code))
-                throw new OperationCanceledException("Kopplung abgebrochen.");
+                throw new AuthenticationException("Kopplung abgebrochen.");
             await _conn.SendControlAsync(new ControlMessage
             {
                 Type = "PairProof",
@@ -90,6 +90,9 @@ public sealed class SessionClient : IAsyncDisposable
                 throw new AuthenticationException(result.Text ?? "Kopplung fehlgeschlagen.");
             m = await _conn.ReadControlAsync(ct);
         }
+
+        if (m.Type == "PairResult" && !m.Ok)   // z. B. Kopplung vorübergehend gesperrt
+            throw new AuthenticationException(m.Text ?? "Kopplung abgelehnt.");
 
         if (m.Type != "Welcome")
             throw new InvalidDataException($"Unerwartete Antwort: {m.Type}");

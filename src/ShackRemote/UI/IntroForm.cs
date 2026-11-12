@@ -11,6 +11,9 @@ namespace ShackRemote.UI;
 public sealed class IntroForm : Form
 {
     private const string LicenseText =
+        "Lizenz\r\n" +
+        "ShackRemote ist freie Software unter der GNU General Public License, Version 3 (GPL v3). " +
+        "Quellcode: github.com/AxBa1964/ShackRemote\r\n\r\n" +
         "Haftungsausschluss\r\n" +
         "Diese Software wird kostenlos und ohne jegliche Gewährleistung bereitgestellt – weder ausdrücklich noch " +
         "stillschweigend, insbesondere nicht für Fehlerfreiheit, ständige Verfügbarkeit oder die Eignung für einen " +

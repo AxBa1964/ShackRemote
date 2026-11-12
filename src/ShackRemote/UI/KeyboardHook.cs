@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace ShackRemote.UI;
 
 /// <summary>
-/// Globaler Tastatur-Haken (WH_KEYBOARD_LL) wie bei AnyDesk: Solange das Fernsteuerungsfenster vorne ist,
+/// Globaler Tastatur-Haken (WH_KEYBOARD_LL), wie bei Fernsteuerungsprogrammen üblich: Solange das Fernsteuerungsfenster vorne ist,
 /// werden ALLE Tasten abgefangen – auch Windows-Taste, Alt+Tab, Alt+F4 – und an den Shack-PC geschickt.
 /// Strg+Alt+Entf kann Windows-bedingt nicht abgefangen werden.
 /// Muss im UI-Thread installiert werden (der Haken braucht dessen Nachrichtenschleife).

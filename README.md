@@ -1,15 +1,15 @@
 # ShackRemote
 
-Fernsteuerung des Shack-PCs vom Laptop aus – ähnlich AnyDesk, aber für den Privatgebrauch vereinfacht:
-**eine Exe, ohne Installation**, beim Start Rolle wählen (Server = Shack-PC, Client = Laptop).
+Fernsteuerung des Shack-PCs vom Laptop aus – kostenlos und für den Privatgebrauch vereinfacht:
+ein Setup für beide Rechner, beim Start Rolle wählen (Server = Shack-PC, Client = Laptop).
 
 - Bild, Ton (nur Shack → Laptop), Tastatur und Maus
-- 3 Monitore im Shack, umschaltbar wie bei AnyDesk
+- 3 Monitore im Shack, einzeln umschaltbar
 - Skalierung auf die Fenstergröße des Laptops
 - Server-Suche im Heimnetz per Broadcast, unterwegs über Tailscale (`tailscale status --json`)
 - Einmaliges Pairing per 6-stelligem Code, danach TLS mit gespeicherten Zertifikaten
 
-Ausführliches Machbarkeitskonzept: [Claude-Dokument](https://claude.ai/artifact/H5EYN2BP7baXKTMVeYsBqS)
+Download, Anleitung und Beschreibung: https://dk7ee.de/shackremote.php
 
 ## Zielsystem
 
@@ -51,6 +51,13 @@ Ergebnis: `publish\setup\ShackRemote-Setup-<Version>.exe` – eine Datei, läuft
 - **Deinstallieren:** über Windows-Einstellungen → Apps; Dienst und Firewall-Regel werden entfernt.
   Kopplungen und Einstellungen (`C:\ProgramData\ShackRemote`, `%APPDATA%\ShackRemote`) bleiben liegen.
 
+## Neu in 1.2.0
+
+- **Kopplungssperre:** Nach 3 falschen Kopplungscodes nimmt der Server 5 Minuten lang keine neuen Kopplungen an
+  und schreibt eine Warnung ins Protokoll. Gekoppelte Geräte verbinden sich weiter normal.
+- **Lizenz:** GNU GPL v3 (`LICENSE`), Hinweis auch im Startfenster.
+- **Setup:** `setup.cmd` erzeugt zusätzlich `publish\setup\shackremote-setup.zip` für die Webseite.
+
 ## Neu in 1.1.0
 
 - **Tailscale:** Die Suche fragt alle Geräte, die in Tailscale online sind, gezielt an (über Tailscale gibt es keinen Broadcast).
@@ -61,3 +68,20 @@ Ergebnis: `publish\setup\ShackRemote-Setup-<Version>.exe` – eine Datei, läuft
 - **Monitore:** Ein-/Ausstecken während der Sitzung wird erkannt (alle 3 s), die Monitorknöpfe passen sich an.
 - **Fehlermeldungen:** Bei Zeitüberschreitung/Ablehnung erklärt der Client mögliche Ursachen.
 - **Dateifenster:** Spalte „Name“ lässt Platz für die Bildlaufleiste (keine waagerechte Leiste mehr).
+
+## Lizenz
+
+ShackRemote – © 2026 Axel Baruschke, DK7EE (dk7ee@darc.de)
+
+Dieses Programm ist freie Software: Sie können es unter den Bedingungen der **GNU General Public License,
+Version 3** (siehe [`LICENSE`](LICENSE)), wie von der Free Software Foundation veröffentlicht, weitergeben
+und/oder verändern. Die Veröffentlichung erfolgt in der Hoffnung, dass es nützlich ist, aber **ohne jede
+Gewährleistung** – sogar ohne die implizite Gewährleistung der Marktreife oder der Verwendbarkeit für einen
+bestimmten Zweck.
+
+Verwendete Bausteine:
+- **FFmpeg** (ffmpeg.org) – mitgelieferte Fassung von gyan.dev unter GNU GPL v3; Quellcode unter https://ffmpeg.org
+- **FFmpeg.AutoGen** – MIT-Lizenz
+- **NAudio** – MIT-Lizenz
+
+Fernzugriff nur auf eigene Rechner oder mit Erlaubnis des Besitzers.

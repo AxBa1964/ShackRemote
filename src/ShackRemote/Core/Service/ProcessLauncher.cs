@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace ShackRemote.Core.Service;
 
 /// <summary>
-/// Startet Prozesse in einer bestimmten Windows-Sitzung – so wie AnyDesk/RustDesk/Sunshine:
+/// Startet Prozesse in einer bestimmten Windows-Sitzung – wie bei Fernsteuerungsprogrammen üblich:
 ///  - als SYSTEM in der Konsolensitzung (Server-Agent; darf auf den Anmelde-/Sperrbildschirm),
 ///  - als angemeldeter Benutzer (z. B. zum Sperren des Bildschirms).
 /// Benötigt SYSTEM-Rechte (Dienst bzw. vom Dienst gestarteter Agent).

@@ -51,6 +51,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem --- 3. ZIP fuer die Webseite (Dateiname ohne Version, alles klein) ---
+powershell -NoProfile -Command "Compress-Archive -Path 'publish\setup\ShackRemote-Setup-%VER%.exe' -DestinationPath 'publish\setup\shackremote-setup.zip' -Force"
+if errorlevel 1 (
+  echo.
+  echo Fehler beim Erstellen der ZIP-Datei.
+  pause
+  exit /b 1
+)
+
 echo.
 echo Fertig: %~dp0publish\setup\ShackRemote-Setup-%VER%.exe
+echo Fuer die Webseite: %~dp0publish\setup\shackremote-setup.zip
 pause

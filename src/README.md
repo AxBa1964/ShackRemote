@@ -51,7 +51,7 @@
 
 ## Dienstbetrieb (Stand 0.5.0)
 
-Wie AnyDesk/RustDesk/Sunshine: Ein Windows-Dienst sorgt für Sperrbildschirm, Anmeldung und Strg+Alt+Entf.
+Wie bei Fernsteuerungsprogrammen üblich: Ein Windows-Dienst sorgt für Sperrbildschirm, Anmeldung und Strg+Alt+Entf.
 
 - **Einrichten:** Server-Fenster → Knopf **„Dienst einrichten“** (Windows fragt nach Adminrechten). Das Programm
   kopiert sich nach `C:\Program Files\ShackRemote`, übernimmt Zertifikat und Kopplungen nach
@@ -93,7 +93,7 @@ Wie AnyDesk/RustDesk/Sunshine: Ein Windows-Dienst sorgt für Sperrbildschirm, An
 
 ## Stufe 1b: Bild (Stand 0.3.0 – GPU-Pipeline im Prozess)
 
-Seit 0.3.0 läuft das Bild wie bei Moonlight/Sunshine, RustDesk und Parsec komplett **im eigenen Prozess auf der GPU**
+Seit 0.3.0 läuft das Bild, wie bei Streaming- und Fernsteuerungsprogrammen üblich, komplett **im eigenen Prozess auf der GPU**
 (vorher: ffmpeg.exe als Hilfsprozess mit Rohbild-Pipe – das staute sich bei Größenänderung und Monitorwechsel).
 
 | Seite | Kette |

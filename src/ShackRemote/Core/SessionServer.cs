@@ -19,6 +19,14 @@ public sealed class SessionServer : IDisposable
     private CancellationTokenSource _cts = new();
     private int _busy;
 
+    // Sperre gegen Durchprobieren von Kopplungscodes: nach MaxPairingFailures falschen Codes
+    // werden für PairingLockout keine neuen Kopplungen angenommen. Gekoppelte Geräte sind nicht betroffen.
+    private const int MaxPairingFailures = 3;
+    private static readonly TimeSpan PairingLockout = TimeSpan.FromMinutes(5);
+    private static readonly object PairingGate = new();
+    private static int _pairingFailures;
+    private static DateTime _pairingLockedUntil = DateTime.MinValue;
+
     /// <summary>Bildrate der Aufnahme. 60 fps wurden in Stufe 0 auf dem N100 erreicht (54–57 fps).</summary>
     public int VideoFps { get; set; } = 60;
 
@@ -114,6 +122,20 @@ public sealed class SessionServer : IDisposable
                 var trusted = AppSettings.Read(s => s.TrustedClients.Any(c => string.Equals(c.Fingerprint, clientFp, StringComparison.OrdinalIgnoreCase)));
                 if (!trusted)
                 {
+                    TimeSpan lockedFor;
+                    lock (PairingGate) lockedFor = _pairingLockedUntil - DateTime.Now;
+                    if (lockedFor > TimeSpan.Zero)
+                    {
+                        int minutes = (int)Math.Ceiling(lockedFor.TotalMinutes);
+                        Log?.Invoke($"Kopplungsversuch von {name} ({remote}) abgewiesen – Kopplung nach falschen Codes noch {minutes} Min. gesperrt");
+                        await conn.SendControlAsync(new ControlMessage
+                        {
+                            Type = "PairResult", Ok = false,
+                            Text = $"Kopplung ist nach mehreren falschen Codes vorübergehend gesperrt. Bitte in {minutes} Minute(n) erneut versuchen.",
+                        }, ct);
+                        return;
+                    }
+
                     var code = Pairing.NewCode();
                     pairingShown = true;
                     PairingCodeShown?.Invoke(code, name);
@@ -129,9 +151,23 @@ public sealed class SessionServer : IDisposable
                     await conn.SendControlAsync(new ControlMessage { Type = "PairResult", Ok = ok, Text = ok ? "Gekoppelt" : "Falscher Code" }, ct);
                     if (!ok)
                     {
-                        Log?.Invoke($"Kopplung mit {name} fehlgeschlagen (falscher Code)");
+                        int failures;
+                        lock (PairingGate)
+                        {
+                            failures = ++_pairingFailures;
+                            if (failures >= MaxPairingFailures)
+                            {
+                                _pairingLockedUntil = DateTime.Now + PairingLockout;
+                                _pairingFailures = 0;
+                            }
+                        }
+                        Log?.Invoke($"Kopplung mit {name} ({remote}) fehlgeschlagen (falscher Code)");
+                        if (failures >= MaxPairingFailures)
+                            Log?.Invoke($"⚠ WARNUNG: {MaxPairingFailures} falsche Kopplungscodes – neue Kopplungen für {PairingLockout.TotalMinutes:F0} Minuten gesperrt. " +
+                                        "Waren das nicht Sie selbst, versucht womöglich jemand im Netz, sich zu koppeln.");
                         return;
                     }
+                    lock (PairingGate) _pairingFailures = 0;
 
                     AppSettings.Update(s => s.TrustedClients.Add(new TrustedClient { Fingerprint = clientFp, Name = name, PairedAt = DateTime.Now }));
                     Log?.Invoke($"{name} gekoppelt");

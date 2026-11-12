@@ -258,6 +258,7 @@ public sealed class ClientForm : Form
             "(Server nicht gestartet oder diese Adresse im Server-Fenster abgewählt).",
         SocketException { SocketErrorCode: SocketError.HostUnreachable or SocketError.NetworkUnreachable } =>
             $"{address} ist nicht erreichbar (kein Weg dorthin – anderes Netz? Tailscale aus?).",
+        System.Security.Authentication.AuthenticationException => ex.Message,
         _ => $"{ex.GetType().Name}: {ex.Message}",
     };
 

@@ -5,7 +5,7 @@ using FFmpeg.AutoGen;
 namespace ShackRemote.Core.Media;
 
 /// <summary>
-/// Client: Dekodieren und Anzeigen komplett auf der GPU (wie Moonlight/RustDesk/Parsec).
+/// Client: Dekodieren und Anzeigen komplett auf der GPU.
 /// H.264 -> D3D11VA-Decoder (Bild bleibt als NV12-Textur auf der GPU) -> D3D11 Video Processor
 /// (NV12 -> BGRA und Skalierung in einem Schritt) -> Swapchain des Anzeigefensters.
 /// Ein eigener Thread dekodiert und zeigt an; die Netzwerk-Leseschleife legt nur Pakete ab.

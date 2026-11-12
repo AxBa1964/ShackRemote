@@ -4,7 +4,7 @@ using ShackRemote.Core.Media;
 namespace ShackRemote.UI;
 
 /// <summary>
-/// Sitzungsfenster (wie bei AnyDesk): Bild des Shack-Monitors, oben Monitorumschaltung und Messwerte.
+/// Sitzungsfenster: Bild des Shack-Monitors, oben Monitorumschaltung und Messwerte.
 /// Die Monitorknöpfe stehen in derselben Reihenfolge wie die Bildschirme beim Server (links nach rechts).
 /// Maus und Tastatur gehen an den Shack-PC (Stufe 1c); Strg+Alt+F1/F2/F3 wechselt lokal den Monitor.
 /// </summary>
