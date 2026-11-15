@@ -44,6 +44,13 @@ public sealed class ServerForm : Form
     private bool _filling;
     private string? _lastExcludedLog;
 
+    // Dienstbetrieb (Agent): kein normales Fenster, sondern Symbol im Infobereich der Taskleiste.
+    // Das Fenster wird nur auf Wunsch gezeigt; "X" blendet es nur aus (sonst würde der Dienst den Agenten neu starten).
+    private NotifyIcon? _tray;
+    private PairingPopup? _pairingPopup;
+    private bool _allowVisible;
+    private bool _initialized;
+
     public ServerForm(X509Certificate2 cert, ServerMode mode)
     {
         _mode = mode;
@@ -51,7 +58,6 @@ public sealed class ServerForm : Form
 
         LayoutKit.PrepareForm(this, $"ShackRemote Server {Protocol.Version} – {Environment.MachineName}"
                                     + (mode == ServerMode.Agent ? " (Dienst)" : ""));
-        if (mode == ServerMode.Agent) WindowState = FormWindowState.Minimized;
         ClientSize = new Size(760, 760);
         MinimumSize = new Size(600, 560);
 
@@ -201,34 +207,110 @@ public sealed class ServerForm : Form
             _pairingFor.Text = $"{name} möchte sich verbinden. Diesen Code dort eingeben (2 Minuten gültig):";
             _pairingCode.Text = $"{code[..3]} {code[3..]}";
             _pairingBox.Visible = true;
+            if (_mode == ServerMode.Agent && !Visible)
+            {
+                // Agent ohne sichtbares Fenster: Code als eigenes kleines Fenster im Vordergrund
+                if (_pairingPopup is { IsDisposed: false }) _pairingPopup.Close();
+                _pairingPopup = new PairingPopup(name, code);
+                _pairingPopup.Show();
+                return;
+            }
             WindowState = WindowState == FormWindowState.Minimized ? FormWindowState.Normal : WindowState;
             Activate();
         });
-        _server.PairingEnded += () => Ui(() => { _pairingBox.Visible = false; FillPaired(); });
+        _server.PairingEnded += () => Ui(() =>
+        {
+            _pairingBox.Visible = false;
+            if (_pairingPopup is { IsDisposed: false }) _pairingPopup.Close();
+            _pairingPopup = null;
+            FillPaired();
+        });
         _server.ClientConnected += who => Ui(() => _status.Text = $"Verbunden: {who}");
         _server.ClientDisconnected += () => Ui(() => _status.Text = "Wartet auf Verbindung …");
 
         _discovery = new DiscoveryResponder(BuildInfo);
         _discovery.Log += msg => Ui(() => Log(msg));
 
-        Load += (_, _) =>
+        Load += (_, _) => InitServer();
+
+        FormClosing += (_, e) =>
         {
-            FillAddresses();
-            FillPaired();
-            if (_mode != ServerMode.Management) StartDiscovery();
-            NetworkChange.NetworkAddressChanged += OnAddressChanged;
-            UpdateServiceState();
-            if (_mode == ServerMode.Agent)
-                Log("Läuft als Dienst (SYSTEM): auch Sperr-/Anmeldebildschirm und Strg+Alt+Entf möglich. Protokoll auch in " +
-                    Path.Combine(ServiceSetup.DataFolder, "agent.log"));
+            // Agent: Schließen per "X" blendet nur aus – beenden würde den Server stoppen und der Dienst startet ihn neu
+            if (_mode == ServerMode.Agent && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                Hide();
+            }
         };
 
         FormClosed += (_, _) =>
         {
             NetworkChange.NetworkAddressChanged -= OnAddressChanged;
+            _tray?.Dispose();
+            if (_pairingPopup is { IsDisposed: false }) _pairingPopup.Close();
             _discovery.Dispose();
             _server.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Im Agent-Betrieb bleibt das Fenster beim Start unsichtbar (nur Symbol im Infobereich).
+    /// Application.Run würde es sonst anzeigen. Der Server wird trotzdem gestartet (Fensterhandle wird angelegt).
+    /// </summary>
+    protected override void SetVisibleCore(bool value)
+    {
+        if (_mode == ServerMode.Agent && !_allowVisible)
+        {
+            if (!IsHandleCreated)
+            {
+                CreateHandle();
+                CreateTrayIcon();
+                InitServer();
+            }
+            base.SetVisibleCore(false);
+            return;
+        }
+        base.SetVisibleCore(value);
+    }
+
+    /// <summary>Symbol im Infobereich (nur Agent): Status und Protokoll anzeigen, Info.</summary>
+    private void CreateTrayIcon()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Status und Protokoll anzeigen", null, (_, _) => ShowAgentWindow());
+        menu.Items.Add("Info", null, (_, _) => { using var intro = new IntroForm(); intro.ShowDialog(); });
+        _tray = new NotifyIcon
+        {
+            Icon = Icon ?? SystemIcons.Application,
+            Text = "ShackRemote Server – läuft als Dienst",
+            ContextMenuStrip = menu,
+            Visible = true,
+        };
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowAgentWindow(); };
+    }
+
+    /// <summary>Agent-Fenster (Status, Protokoll) auf Wunsch zeigen.</summary>
+    private void ShowAgentWindow()
+    {
+        _allowVisible = true;
+        Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
+    /// <summary>Server, Suche und Anzeige einmalig starten (beim ersten Anzeigen bzw. im Agent beim Anlegen des Handles).</summary>
+    private void InitServer()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        FillAddresses();
+        FillPaired();
+        if (_mode != ServerMode.Management) StartDiscovery();
+        NetworkChange.NetworkAddressChanged += OnAddressChanged;
+        UpdateServiceState();
+        if (_mode == ServerMode.Agent)
+            Log("Läuft als Dienst (SYSTEM): auch Sperr-/Anmeldebildschirm und Strg+Alt+Entf möglich. Protokoll auch in " +
+                Path.Combine(ServiceSetup.DataFolder, "agent.log"));
     }
 
     private void OnAddressChanged(object? sender, EventArgs e) => Ui(() =>
@@ -397,6 +479,12 @@ public sealed class ServerForm : Form
 
     private void UpdateServiceState()
     {
+        Text = $"ShackRemote Server {Protocol.Version} – {Environment.MachineName}" + _mode switch
+        {
+            ServerMode.Agent => " (Dienst)",
+            ServerMode.Management => " – Verwaltung",
+            _ => "",
+        };
         var status = ServiceSetup.Status();
         _serviceInstall.Text = status is null ? "Dienst einrichten" : "Dienst aktualisieren";
         _serviceRemove.Enabled = status is not null;

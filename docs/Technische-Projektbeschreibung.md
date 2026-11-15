@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **Stand** | 12.11.2026 |
 | **Autor** | Axel Baruschke, DK7EE – dk7ee@darc.de |
 | **Lizenz** | GNU GPL v3 |
@@ -73,7 +73,7 @@ flowchart LR
 | **Client** | Rolle „Client“ oder `/client` | Suchen, Verbinden, Kopplung, Fernsteuerungs- und Dateifenster |
 | **Server (normal)** | Rolle „Server“ ohne Dienst | Server läuft im Fenster des angemeldeten Benutzers (kein Anmeldebildschirm, kein Strg+Alt+Entf) |
 | **Dienst** | Windows, `/dienst` | Hält den Agenten in der Konsolensitzung am Leben, löst `SendSAS` aus; keine Oberfläche |
-| **Agent** | vom Dienst, `/agent` | Eigentlicher Server als SYSTEM; darf auf den Winlogon-Desktop; minimiertes Fenster „(Dienst)“; Protokoll in `agent.log` |
+| **Agent** | vom Dienst, `/agent` | Eigentlicher Server als SYSTEM; darf auf den Winlogon-Desktop; **kein sichtbares Fenster**, nur Symbol im Infobereich (Klick: Status/Protokoll; „X“ blendet nur aus); Kopplungscode als eigenes Fenster (`PairingPopup`); Protokoll in `agent.log` |
 | **Verwaltung** | Rolle „Server“, wenn der Dienst läuft | Einstellungen des Dienstes ansehen/ändern; lauscht selbst nicht |
 
 `ServerMode` (in `UI/ServerForm.cs`) unterscheidet `Normal`, `Management`, `Agent`.
@@ -132,7 +132,8 @@ ShackRemote/
 | **UI** | |
 | `IntroForm.cs` | Startfenster mit Bild, Version, Lizenz |
 | `RoleForm.cs` | Rollenwahl |
-| `ServerForm.cs` | Server-Fenster (Normal/Verwaltung/Agent): Adressen, gekoppelte Geräte, Dienst, Protokoll |
+| `ServerForm.cs` | Server-Fenster (Normal/Verwaltung/Agent): Adressen, gekoppelte Geräte, Dienst, Protokoll; im Agent unsichtbar mit Symbol im Infobereich (`SetVisibleCore`, `NotifyIcon`) |
+| `PairingPopup.cs` | Kopplungscode als Fenster im Vordergrund (Agent ohne sichtbares Fenster) |
 | `ClientForm.cs` | Client-Fenster: Suche, Verbinden, verständliche Fehlertexte |
 | `RemoteForm.cs` | Fernsteuerungsfenster: Kopfleiste, Bild, Eingabe, Ton, Statuszeile |
 | `VideoPanel.cs` | Zeichenfläche für den Renderer (eigenes Fensterhandle) |
@@ -463,6 +464,7 @@ dotnet run --project src\ShackRemote -- /client
 | `h264_qsv`: „MFX session -9“ | oneVPL-Loader von hwcontext passt nicht zu avcodec (DLL-Fassung) | Loader für `avcodec_open2` auf `null` (siehe 4.1) |
 | `AcquireNextFrame failed: 887a0026` | `DXGI_ERROR_ACCESS_LOST` (Sperrbildschirm, Auflösung, UAC) | `VideoChannel` baut die Aufnahme neu auf |
 | Win+L am Laptop sperrt den Laptop | Windows lässt Win+L/Strg+Alt+Entf nicht abfangen | Menü „…“: Sperren / Strg+Alt+Entf über den Server |
+| Agent-Fenster geht nach dem Schließen nach ~1 s wieder auf | Schließen beendete den Agenten, der Dienst startet ihn alle 2 s neu | Seit 1.2.1 kein normales Fenster mehr; „X“ blendet nur aus |
 | Fehler 1400 „Fensterhandle“ beim Verbinden | `Button.Image` im `HandleCreated` gesetzt → Neuaufbau während `CreateControl` | Bilder vor dem Anlegen der Fenster setzen |
 | Laufwerksliste lädt 19 s | getrennte Netzlaufwerke blockieren | Laufwerke sofort zeigen, Details nachreichen |
 | Verbindung über Tailscale: keine Antwort | Tailscale-Adresse in der **Dienst**-`settings.json` abgewählt | Verwaltungsfenster → „Für Dienst übernehmen“ (seit 1.1) |

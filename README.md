@@ -55,6 +55,14 @@ Ergebnis: `publish\setup\ShackRemote-Setup-<Version>.exe` – eine Datei, läuft
 - **Deinstallieren:** über Windows-Einstellungen → Apps; Dienst und Firewall-Regel werden entfernt.
   Kopplungen und Einstellungen (`C:\ProgramData\ShackRemote`, `%APPDATA%\ShackRemote`) bleiben liegen.
 
+## Neu in 1.2.1
+
+- **Dienstbetrieb ohne Fenster:** Der Agent zeigt nur noch ein Symbol im Infobereich der Taskleiste
+  (Klick: Status und Protokoll). „X“ blendet das Fenster nur aus – vorher wurde der Agent beendet und vom Dienst
+  nach etwa einer Sekunde neu gestartet, das Fenster „sprang“ wieder auf.
+- **Kopplungscode** erscheint im Dienstbetrieb als eigenes kleines Fenster im Vordergrund.
+- **Verwaltungsfenster** heißt im Titel „… – Verwaltung“.
+
 ## Neu in 1.2.0
 
 - **Kopplungssperre:** Nach 3 falschen Kopplungscodes nimmt der Server 5 Minuten lang keine neuen Kopplungen an

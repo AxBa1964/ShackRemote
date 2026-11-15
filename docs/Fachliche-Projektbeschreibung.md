@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Projekt** | ShackRemote – Fernsteuerung des Shack-PCs |
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **Stand** | 12.11.2026 |
 | **Autor / Verantwortlich** | Axel Baruschke, DK7EE – dk7ee@darc.de |
 | **Lizenz** | GNU General Public License, Version 3 |
@@ -58,7 +58,7 @@ eigenen Shack-PCs braucht – nicht mehr.
 | **Laptop / Client** | Der Rechner, von dem aus gesteuert wird. |
 | **Rolle** | Server oder Client. Ein und dasselbe Programm übernimmt je nach Wahl beim Start die eine oder andere Rolle. |
 | **Dienst** | Windows-Dienst „ShackRemote“ auf dem Shack-PC. Startet mit Windows, auch ohne Anmeldung. |
-| **Agent** | Der eigentliche Server im Dienstbetrieb. Der Dienst startet ihn in der Sitzung am Bildschirm des Shack-PCs. Er zeigt ein kleines Fenster mit dem Zusatz „(Dienst)“. |
+| **Agent** | Der eigentliche Server im Dienstbetrieb. Der Dienst startet ihn in der Sitzung am Bildschirm des Shack-PCs. Er hat kein normales Fenster, sondern nur ein Symbol im Infobereich der Taskleiste (Klick zeigt Status und Protokoll). |
 | **Verwaltungsfenster** | Normal gestartetes ShackRemote in der Rolle Server, während der Dienst läuft. Dient nur zum Einstellen (Adressen, gekoppelte Geräte, Dienst). |
 | **Kopplung** | Einmaliges gegenseitiges Bekanntmachen von Laptop und Shack-PC per 6-stelligem Code. |
 | **Kopplungscode** | Zufälliger 6-stelliger Code, der nur auf dem Bildschirm des Shack-PCs erscheint, 2 Minuten gültig. |
@@ -148,7 +148,7 @@ ShackRemote am Shack-PC normal starten und „Server“ wählen → Verwaltungsf
   abgewählt, erscheint ein Warnhinweis. Weicht die Auswahl von der des Dienstes ab, erscheint „Für Dienst übernehmen“.
 - **Gekoppelte Geräte** mit „Entfernen“.
 - **Dienst aktualisieren / entfernen** (nur nötig ohne Setup).
-- Das Verwaltungsfenster darf geschlossen werden; das Fenster mit „(Dienst)“ im Titel nur minimieren.
+- Das Verwaltungsfenster („… – Verwaltung“) darf geschlossen werden. Der Agent läuft unsichtbar mit Symbol im Infobereich; sein Statusfenster wird mit „X“ nur ausgeblendet.
 
 ---
 
@@ -260,3 +260,4 @@ ShackRemote am Shack-PC normal starten und „Server“ wählen → Verwaltungsf
 | 11.11.2026 | 1.0 | Setup (Inno Setup), Programmsymbol, Eingabemaske für den Kopplungscode |
 | 11.11.2026 | 1.1 | Stufe 2: Tailscale-Suche, Verwaltung der Dienst-Einstellungen, gekoppelte Geräte, Monitor-Hotplug |
 | 12.11.2026 | 1.2 | Kopplungssperre, GPL v3, Bereinigung für die Veröffentlichung, Projektdokumentation |
+| 15.11.2026 | 1.2.1 | Agent ohne Fenster (Symbol im Infobereich), Kopplungscode als eigenes Fenster, Titel „Verwaltung“ |
